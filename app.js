@@ -770,18 +770,12 @@ function lerForm() {
         else _form.vinho[k] = val;
     });
 }
-/* O PREÇO: obrigatório daqui em diante (config `preco_obrigatorio_desde`,
-   confirmado outra vez pela `guardar_evento`), mas só numa garrafa já
-   comprada — antes disso ninguém sabe quanto custa. Nas prendas passadas é
-   opcional, e sem preço ninguém deve nada: não se obriga ninguém a
-   reconstituir quanto pagou em março. */
-function precoObrigatorioDesde() {
-    const v = config.preco_obrigatorio_desde;
-    return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : '2026-09-23';
-}
-function _formPrecoObrigatorio() {
-    return _form.estado !== 'por_comprar' && (_form.data || '') >= precoObrigatorioDesde();
-}
+/* O PREÇO é sempre OPCIONAL: registar a garrafa e gerir as contas pela app
+   são coisas separadas, e a segunda é com cada um. Sem preço ninguém deve
+   nada. (Chegou a ser obrigatório daqui em diante; saiu a pedido do dono —
+   não voltar a pôr sem ele pedir.) A função fica para o formulário saber que
+   rótulo mostrar. */
+function _formPrecoObrigatorio() { return false; }
 function _formValor() {
     const v = lerNum(_form.valor);
     return v > 0 ? v : 0;
@@ -963,7 +957,6 @@ async function guardarEvento() {
     if (!f.data) { toast('Falta a data', false); return; }
     const valor = String(f.valor).trim() === '' ? null : lerNum(f.valor);
     if (valor !== null && !(valor >= 0)) { toast('Preço inválido', false); return; }
-    if (_formPrecoObrigatorio() && !(valor > 0)) { toast('Falta o preço da garrafa', false); document.getElementById('f-valor')?.focus(); return; }
     const dividir = valor > 0 ? Math.round(_formDividir() * 100) / 100 : null;
     if (dividir !== null && dividir > valor + 0.004) { toast('O valor a dividir não pode passar do preço pago', false); return; }
     if (f.vinho.nome && !f.vinho.origem) f.vinho.origem = 'manual';

@@ -32,12 +32,11 @@ CREATE TABLE IF NOT EXISTS anniversarygifts.config (
 INSERT INTO anniversarygifts.config (chave, valor)
 VALUES ('admin_email', to_jsonb('diogo.andre.f.silva@gmail.com'::text))
 ON CONFLICT (chave) DO NOTHING;
--- A partir de que data o PREÇO é obrigatório numa prenda já comprada. Antes
--- dela (as prendas passadas) pode ficar sem preço — e sem preço ninguém deve
--- nada: há quem não se lembre, e não se quer obrigar ninguém a reconstituir.
-INSERT INTO anniversarygifts.config (chave, valor)
-VALUES ('preco_obrigatorio_desde', to_jsonb('2026-09-23'::text))
-ON CONFLICT (chave) DO NOTHING;
+-- O PREÇO é sempre opcional: registar a garrafa e gerir as contas pela app
+-- são coisas separadas, e a segunda é com cada um. Sem preço ninguém deve
+-- nada. (Houve uma `preco_obrigatorio_desde` a obrigá-lo daqui em diante;
+-- saiu a pedido do dono.)
+DELETE FROM anniversarygifts.config WHERE chave = 'preco_obrigatorio_desde';
 
 -- ── Amigos ────────────────────────────────────────────────────────────
 -- O NOME é a identidade (é o que aparece nas prendas e nos pagamentos), o
@@ -226,7 +225,6 @@ DECLARE
   v_part  text[];
   v_antes numeric;
   v_div   numeric;
-  v_desde date;
   r       anniversarygifts.eventos%ROWTYPE;
 BEGIN
   IF NOT anniversarygifts.is_allowed() THEN RAISE EXCEPTION 'Sem acesso.'; END IF;
@@ -237,15 +235,6 @@ BEGIN
     RAISE EXCEPTION 'Quem faz anos não compra a própria prenda.';
   END IF;
   IF p_valor IS NOT NULL AND p_valor < 0 THEN RAISE EXCEPTION 'Valor inválido.'; END IF;
-  -- Preço obrigatório daqui em diante, mas só depois de comprada: antes
-  -- disso ainda ninguém sabe quanto custa.
-  SELECT (valor #>> '{}')::date INTO v_desde
-    FROM anniversarygifts.config WHERE chave = 'preco_obrigatorio_desde';
-  IF coalesce(p_estado, 'por_comprar') <> 'por_comprar'
-     AND p_data >= coalesce(v_desde, DATE '2026-09-23')
-     AND coalesce(p_valor, 0) <= 0 THEN
-    RAISE EXCEPTION 'Falta o preço da garrafa.';
-  END IF;
   -- O que se divide nunca passa do que se pagou; sem preço não há nada a dividir.
   v_div := CASE WHEN coalesce(p_valor, 0) > 0 THEN p_valor_dividir END;
   IF v_div IS NOT NULL AND (v_div < 0 OR v_div > p_valor) THEN

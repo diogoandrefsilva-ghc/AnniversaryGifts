@@ -131,11 +131,12 @@ gosta de inícios assim, com cartões grandes — lista nova vai por baixo ou
 para outro separador, não entre os cartões.
 
 ## O preço e "quem já pagou"
-- **Preço obrigatório daqui em diante, opcional para trás.** A partir de
-  `config.preco_obrigatorio_desde` (2026-09-23) uma prenda já comprada tem
-  de ter preço — confirmado na app E na `guardar_evento`. Antes dessa data
-  pode ficar sem preço, e **sem preço ninguém deve nada** (a view não gera
-  linhas): não se obriga ninguém a reconstituir o que pagou em março.
+- **O preço é SEMPRE opcional.** Registar a garrafa e gerir as contas pela
+  app são coisas separadas, e a segunda é com cada um: quem quiser mete o
+  preço e as dívidas nascem; quem não quiser não mete, e **sem preço ninguém
+  deve nada** (a view não gera linhas). Chegou a ser obrigatório a partir de
+  23/09/2026 (`preco_obrigatorio_desde`); saiu a pedido do dono — não voltar
+  a pôr sem ele pedir.
 - **"Quem já pagou" marca-se no próprio formulário** (`folhaFormPagos`),
   gravado pela `marcar_pago` ANTES de sair o aviso `divida`. Senão, numa
   prenda passada, toda a gente recebia uma notificação de dívida no
