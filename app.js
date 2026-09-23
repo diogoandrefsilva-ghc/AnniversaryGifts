@@ -838,14 +838,17 @@ function folhaForm() {
       <div class="f-bloco">
         <h4 class="f-sec">A garrafa</h4>
         ${campoV('nome', 'Vinho', 'text', 'placeholder="ex.: Papa Figos" autocomplete="off"')}
+        <!-- A COR vai antes da procura, e o produtor depois: quem tem a garrafa
+             na mão sabe sempre a cor, nem sempre o produtor — e é a cor que
+             separa o "Papa Figos" tinto do branco. A procura preenche o produtor. -->
         <div class="grelha2">
-          ${campoV('produtor', 'Produtor', 'text', 'placeholder="ex.: Casa Ferreirinha"')}
+          <label class="campo"><span>Cor</span><select id="fv-tipo">${TIPOS_VINHO.map(t => `<option${(v.tipo || '') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
           ${campoV('ano', 'Colheita', 'number', 'inputmode="numeric" min="1900" max="2100"')}
         </div>
         <button class="btn procura largo" id="btn-procurar" onclick="procurarVinho()">🔎 Procurar informação do vinho</button>
         <div id="f-procura-res">${_procuraRelatorio || ''}</div>
         <div class="grelha2">
-          <label class="campo"><span>Cor</span><select id="fv-tipo">${TIPOS_VINHO.map(t => `<option${(v.tipo || '') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          ${campoV('produtor', 'Produtor', 'text', 'placeholder="ex.: Casa Ferreirinha"')}
           ${campoV('regiao', 'Região')}
         </div>
         ${campoV('castas', 'Castas <small>(separadas por vírgulas)</small>')}
@@ -1056,7 +1059,14 @@ async function procurarVinho() {
     let doCatalogo = [];
     try {
         const r = await rpc('comparar', { p_nome: v.nome, p_produtor: v.produtor || '', p_ano: v.ano || null, p_ficha: {} }, 'winecatalog');
-        if (r && r.encontrado) {
+        // O catálogo ainda não separa a cor na chave (é a "mudança da cor na
+        // chave", decidida e por fazer na WineCatalog): pedir "Papa Figos"
+        // pode trazer o tinto quando a garrafa é o branco. Com a cor escolhida
+        // e diferente da do catálogo, não se copia nada — é outro vinho.
+        const corCat = r && r.encontrado ? ((r.campos || []).find(c => c.campo === 'tipo') || {}).catalogo : null;
+        if (r && r.encontrado && v.tipo && corCat && String(corCat).toLowerCase() !== String(v.tipo).toLowerCase()) {
+            _procuraRelatorio = `<div class="relatorio">📚 O catálogo tem um <b>${esc(r.nome)}</b>, mas <b>${esc(corCat)}</b> — e esta garrafa é <b>${esc(v.tipo)}</b>. Não copiei nada: deve ser outro vinho.</div>`;
+        } else if (r && r.encontrado) {
             const ficha = {};
             (r.campos || []).forEach(c => { const k = MAPA_CATALOGO[c.campo]; if (k) ficha[k] = c.catalogo; });
             if (!v.produtor && r.produtor) ficha.produtor = r.produtor;
@@ -1082,7 +1092,7 @@ async function pesquisarVinhoInternet() {
     const btn = document.getElementById('btn-pesquisar');
     if (btn) { btn.disabled = true; btn.innerHTML = '🌐 A pesquisar… <small>pode levar um minuto</small>'; }
     try {
-        const r = await edgeFn('prendas-vinho', { nome: v.nome, produtor: v.produtor || '', ano: v.ano || null }, 110000);
+        const r = await edgeFn('prendas-vinho', { nome: v.nome, produtor: v.produtor || '', ano: v.ano || null, tipo: v.tipo || '' }, 110000);
         if (!_form) return;
         if (!r.encontrado) {
             _procuraRelatorio = `<div class="relatorio">🌐 A pesquisa não encontrou este vinho${r.aviso ? ': ' + esc(r.aviso) : '.'} Confirma o nome e o produtor.</div>`;

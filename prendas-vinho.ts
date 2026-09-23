@@ -133,13 +133,13 @@ function fontesGrounding(body: any): { titulo: string; url: string }[] {
   return out;
 }
 
-const prompt = (nome: string, produtor: string, ano: number | null) => `
+const prompt = (nome: string, produtor: string, ano: number | null, tipo: string) => `
 És um enólogo a preencher a ficha de um vinho que foi oferecido como prenda de anos.
 Usa PESQUISA WEB para confirmar os dados — não respondas de memória.
 
 VINHO:
   Nome: ${nome}
-${produtor ? `  Produtor: ${produtor}\n` : ""}${ano ? `  Colheita: ${ano}\n` : ""}
+${tipo ? `  Cor: ${tipo} (dita por quem tem a garrafa — é um dado seguro; se o nome tiver versões de outra cor, é ESTA)\n` : ""}${produtor ? `  Produtor: ${produtor}\n` : ""}${ano ? `  Colheita: ${ano}\n` : ""}
 REGRAS:
 1. NÃO INVENTES. Um campo que não confirmes fica fora do JSON.
 2. Se o produtor tiver vários vinhos com este nome (Reserva, Grande Reserva,
@@ -224,6 +224,9 @@ Deno.serve(async (req) => {
   const nome = texto(corpo.nome, 120);
   const produtor = texto(corpo.produtor, 90);
   const ano = numero(corpo.ano, 1900, 2100, 0);
+  // A cor, escolhida no formulário ANTES da procura: é o que separa o "Papa
+  // Figos" tinto do branco. Só entra no prompt se for uma das cores conhecidas.
+  const tipoPedido = TIPOS.find((x) => x.toLowerCase() === texto(corpo.tipo, 20).toLowerCase()) ?? "";
   if (!nome) return json({ error: "falta o nome do vinho" }, 400);
 
   const ctrl = new AbortController();
@@ -242,7 +245,7 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json" },
         signal: ctrl.signal,
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt(nome, produtor, ano) }] }],
+          contents: [{ role: "user", parts: [{ text: prompt(nome, produtor, ano, tipoPedido) }] }],
           generationConfig: { temperature: 0 },
           tools: [{ google_search: {} }],
         }),

@@ -96,6 +96,12 @@ catalogo_id`.
   `prendas-vinho` (pesquisa Google com grounding, síncrona, ~€0.01).
 - **Nenhum dos dois escreve por cima do que já está no formulário** — só
   preenche vazios. Quem tem a garrafa na mão sabe melhor.
+- **A COR escolhe-se ANTES da procura** (o produtor vem depois, e a procura
+  preenche-o): quem tem a garrafa sabe sempre a cor, e é ela que separa o
+  "Papa Figos" tinto do branco. A `prendas-vinho` recebe-a no prompt como
+  dado seguro. O catálogo ainda NÃO tem a cor na chave (é "a mudança da cor
+  na chave", decidida e por fazer na WineCatalog), por isso a app confere
+  à mão: se o catálogo devolver outra cor, **não copia nada** e diz porquê.
 - **A ficha é uma CÓPIA, e não se atualiza sozinha.** O que muda depois no
   catálogo (uma imagem nova, uma nota) só chega à prenda pelo botão
   **"🔄 Atualizar do catálogo"** da ficha (quem gere a prenda): a
