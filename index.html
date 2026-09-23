@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Prendas de Anos</title>
+<meta name="description" content="As garrafas de vinho que oferecemos uns aos outros nos anos: quem compra, quanto custou e quem já pagou.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Prendas">
+<meta name="theme-color" content="#3a0d21">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Splash: tapa o HTML cru enquanto a sessão carrega -->
+<div id="pg-splash">
+  <div class="pg-splash-logo">🍷</div>
+  <div class="pg-splash-title">Prendas de Anos</div>
+  <div class="pg-spin"></div>
+</div>
+<script>
+window.pgEsconderSplash = function(){
+  var s = document.getElementById('pg-splash');
+  if (s && s.style.display !== 'none') { s.style.opacity = '0'; setTimeout(function(){ s.style.display = 'none'; }, 280); }
+};
+setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }, 7000);
+</script>
+
+<!-- ═══ Autenticação ═══ -->
+<div class="auth-page" id="page-login">
+  <div class="auth-emoji">🍷</div>
+  <h2>Prendas de Anos</h2>
+  <div class="auth-faixa"></div>
+  <div class="auth-sub">A garrafa que cada um oferece ao seguinte. Entra com a mesma conta do SplitBill.</div>
+  <div class="auth-card">
+    <button class="auth-btn google" onclick="sbLoginGoogle()">
+      <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+      Entrar com Google
+    </button>
+    <div class="auth-divider">ou com email</div>
+    <label for="login-email">Email</label>
+    <input type="email" id="login-email" autocomplete="email" placeholder="email@exemplo.com">
+    <label for="login-password">Password</label>
+    <input type="password" id="login-password" autocomplete="current-password" placeholder="••••••••">
+    <button class="auth-btn prim" onclick="sbLoginEmail()">Entrar</button>
+    <div class="auth-status" id="login-status"></div>
+  </div>
+</div>
+
+<div class="auth-page" id="page-sem-acesso">
+  <div class="auth-emoji">🔒</div>
+  <h2>Ainda sem acesso</h2>
+  <div class="auth-faixa"></div>
+  <div class="auth-sub" id="sem-acesso-email"></div>
+  <div class="auth-card">
+    <p class="auth-nota">O acesso é ter a tua conta ligada ao teu nome na lista de amigos. Pede ao admin — ele recebe um aviso.</p>
+    <button class="auth-btn prim" id="btn-solicitar" onclick="sbSolicitarAcesso()">Pedir acesso</button>
+    <button class="auth-btn ghost" onclick="sbAposLogin()">🔄 Verificar outra vez</button>
+    <button class="auth-btn link" onclick="sbLogout()">Sair</button>
+    <div class="auth-status" id="solicitar-status"></div>
+  </div>
+</div>
+
+<!-- ═══ A app ═══ -->
+<div id="app" hidden>
+  <header class="topo">
+    <div class="topo-tit">
+      <span class="topo-logo" aria-hidden="true">🍷</span>
+      <h1 id="topo-titulo">Prendas</h1>
+    </div>
+    <button class="topo-btn" onclick="irPara('definicoes')" aria-label="Definições">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.7 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="pagina" id="pg-inicio"></section>
+    <section class="pagina" id="pg-prendas" hidden></section>
+    <section class="pagina" id="pg-dividas" hidden></section>
+    <section class="pagina" id="pg-ciclo" hidden></section>
+    <section class="pagina" id="pg-definicoes" hidden></section>
+  </main>
+
+  <nav class="tabbar" aria-label="Secções">
+    <button class="tab on" data-tab="inicio" onclick="irPara('inicio')"><span aria-hidden="true">🏠</span>Início</button>
+    <button class="tab" data-tab="prendas" onclick="irPara('prendas')"><span aria-hidden="true">🎁</span>Prendas</button>
+    <button class="tab" data-tab="dividas" onclick="irPara('dividas')"><span aria-hidden="true">💶</span>Dívidas<i class="tab-badge" id="badge-dividas" hidden></i></button>
+    <button class="tab" data-tab="ciclo" onclick="irPara('ciclo')"><span aria-hidden="true">🎂</span>Ciclo</button>
+  </nav>
+</div>
+
+<!-- Folha (bottom sheet) genérica: a prenda, os formulários, os diálogos -->
+<div class="folha-fundo" id="folha-fundo" onclick="fecharFolha()"></div>
+<div class="folha" id="folha" role="dialog" aria-modal="true">
+  <div class="folha-pega"></div>
+  <div class="folha-corpo" id="folha-corpo"></div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
