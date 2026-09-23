@@ -110,6 +110,15 @@ CREATE TABLE IF NOT EXISTS anniversarygifts.pagamentos (
   resolvido_por text,
   resolvido_em  timestamptz
 );
+-- O LIMITE: as prendas têm um valor máximo combinado. Quem escolhe gastar
+-- mais normalmente fica com o excedente — por isso o que se DIVIDE pode ser
+-- menos do que o que se PAGOU. `valor_dividir` é essa parte (NULL = divide-se
+-- o preço todo); o resto fica com quem comprou. O limite em si vive em
+-- `config.limite_prenda` e é só a PROPOSTA: quem regista pode dividir mais
+-- ou menos, porque "normalmente" não é "sempre".
+ALTER TABLE anniversarygifts.eventos ADD COLUMN IF NOT EXISTS valor_dividir numeric(10,2)
+  CHECK (valor_dividir IS NULL OR valor_dividir >= 0);
+
 CREATE INDEX IF NOT EXISTS pagamentos_evento_idx ON anniversarygifts.pagamentos (evento_id);
 
 -- ── Notificações push (uma linha por dispositivo) ─────────────────────
@@ -177,18 +186,18 @@ CREATE OR REPLACE VIEW anniversarygifts.dividas WITH (security_invoker = true) A
 SELECT e.id AS evento_id,
        p.devedor,
        e.responsavel AS credor,
-       round(e.valor / greatest(cardinality(e.participantes), 1), 2) AS quota,
+       round(coalesce(e.valor_dividir, e.valor) / greatest(cardinality(e.participantes), 1), 2) AS quota,
        coalesce(sum(pg.valor) FILTER (WHERE pg.estado = 'confirmado'), 0) AS pago,
        coalesce(sum(pg.valor) FILTER (WHERE pg.estado = 'declarado'), 0)  AS por_confirmar,
-       round(e.valor / greatest(cardinality(e.participantes), 1), 2)
+       round(coalesce(e.valor_dividir, e.valor) / greatest(cardinality(e.participantes), 1), 2)
          - coalesce(sum(pg.valor) FILTER (WHERE pg.estado = 'confirmado'), 0) AS saldo
   FROM anniversarygifts.eventos e
  CROSS JOIN LATERAL unnest(e.participantes) AS p(devedor)
   LEFT JOIN anniversarygifts.pagamentos pg
          ON pg.evento_id = e.id AND pg.devedor = p.devedor
- WHERE e.valor IS NOT NULL AND e.valor > 0
+ WHERE coalesce(e.valor_dividir, e.valor) > 0
    AND p.devedor <> e.responsavel
- GROUP BY e.id, p.devedor, e.responsavel, e.valor, e.participantes;
+ GROUP BY e.id, p.devedor, e.responsavel, e.valor, e.valor_dividir, e.participantes;
 
 -- =====================================================================
 -- ESCRITAS (SECURITY DEFINER). Cada uma confirma quem chama.
@@ -201,9 +210,13 @@ SELECT e.id AS evento_id,
 -- Quem: o admin, ou o RESPONSÁVEL pela prenda. O responsável não pode
 -- mudar o aniversariante nem passar a responsabilidade a outro — isso é
 -- decisão do admin (é o ciclo, não a vontade de quem compra).
+-- (a assinatura antiga, sem p_valor_dividir, sai: duas versões da mesma
+-- função eram duas portas com regras diferentes)
+DROP FUNCTION IF EXISTS anniversarygifts.guardar_evento(bigint, text, date, text, text[], text, numeric, jsonb, text);
 CREATE OR REPLACE FUNCTION anniversarygifts.guardar_evento(
   p_id bigint, p_aniversariante text, p_data date, p_responsavel text,
-  p_participantes text[], p_estado text, p_valor numeric, p_vinho jsonb, p_notas text
+  p_participantes text[], p_estado text, p_valor numeric, p_vinho jsonb, p_notas text,
+  p_valor_dividir numeric DEFAULT NULL
 ) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = anniversarygifts, public
 AS $$
@@ -212,6 +225,7 @@ DECLARE
   v_admin boolean := anniversarygifts.is_admin();
   v_part  text[];
   v_antes numeric;
+  v_div   numeric;
   v_desde date;
   r       anniversarygifts.eventos%ROWTYPE;
 BEGIN
@@ -232,6 +246,12 @@ BEGIN
      AND coalesce(p_valor, 0) <= 0 THEN
     RAISE EXCEPTION 'Falta o preço da garrafa.';
   END IF;
+  -- O que se divide nunca passa do que se pagou; sem preço não há nada a dividir.
+  v_div := CASE WHEN coalesce(p_valor, 0) > 0 THEN p_valor_dividir END;
+  IF v_div IS NOT NULL AND (v_div < 0 OR v_div > p_valor) THEN
+    RAISE EXCEPTION 'O valor a dividir não pode passar do preço pago.';
+  END IF;
+  IF v_div = p_valor THEN v_div := NULL; END IF;
   IF p_vinho IS NOT NULL AND (jsonb_typeof(p_vinho) <> 'object' OR length(p_vinho::text) > 20000) THEN
     RAISE EXCEPTION 'Ficha do vinho inválida.';
   END IF;
@@ -251,15 +271,15 @@ BEGIN
     END IF;
     BEGIN
       INSERT INTO anniversarygifts.eventos
-        (aniversariante, data, responsavel, participantes, estado, valor, vinho, notas, criado_por, atualizado_por)
+        (aniversariante, data, responsavel, participantes, estado, valor, valor_dividir, vinho, notas, criado_por, atualizado_por)
       VALUES (p_aniversariante, p_data, p_responsavel, v_part, coalesce(p_estado, 'por_comprar'),
-              p_valor, coalesce(p_vinho, '{}'::jsonb), nullif(btrim(coalesce(p_notas, '')), ''),
+              p_valor, v_div, coalesce(p_vinho, '{}'::jsonb), nullif(btrim(coalesce(p_notas, '')), ''),
               anniversarygifts.meu_email(), anniversarygifts.meu_email())
       RETURNING * INTO r;
     EXCEPTION WHEN unique_violation THEN
       RAISE EXCEPTION 'Já existe uma prenda para os anos de % em %.', p_aniversariante, extract(year FROM p_data);
     END;
-    RETURN to_jsonb(r) || jsonb_build_object('valor_mudou', p_valor IS NOT NULL AND p_valor > 0);
+    RETURN to_jsonb(r) || jsonb_build_object('valor_mudou', coalesce(v_div, p_valor, 0) > 0);
   END IF;
 
   SELECT * INTO r FROM anniversarygifts.eventos WHERE id = p_id FOR UPDATE;
@@ -271,12 +291,12 @@ BEGIN
                       OR p_responsavel IS DISTINCT FROM r.responsavel) THEN
     RAISE EXCEPTION 'Só o admin muda quem faz anos ou quem compra.';
   END IF;
-  v_antes := r.valor;
+  v_antes := coalesce(r.valor_dividir, r.valor);
 
   BEGIN
     UPDATE anniversarygifts.eventos SET
       aniversariante = p_aniversariante, data = p_data, responsavel = p_responsavel,
-      participantes = v_part, estado = coalesce(p_estado, estado), valor = p_valor,
+      participantes = v_part, estado = coalesce(p_estado, estado), valor = p_valor, valor_dividir = v_div,
       vinho = coalesce(p_vinho, vinho), notas = nullif(btrim(coalesce(p_notas, '')), ''),
       atualizado_por = anniversarygifts.meu_email(), atualizado_em = now()
     WHERE id = p_id
@@ -285,7 +305,7 @@ BEGIN
     RAISE EXCEPTION 'Já existe uma prenda para os anos de % em %.', p_aniversariante, extract(year FROM p_data);
   END;
   RETURN to_jsonb(r) || jsonb_build_object(
-    'valor_mudou', p_valor IS NOT NULL AND p_valor > 0 AND p_valor IS DISTINCT FROM v_antes);
+    'valor_mudou', coalesce(v_div, p_valor, 0) > 0 AND coalesce(v_div, p_valor) IS DISTINCT FROM v_antes);
 END;
 $$;
 

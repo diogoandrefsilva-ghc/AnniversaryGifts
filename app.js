@@ -244,7 +244,7 @@ async function carregarDados() {
     ]);
     amigos = am; eventos = ev; pagamentos = pg;
     dividas = dv.map(d => ({ ...d, quota: +d.quota, pago: +d.pago, por_confirmar: +d.por_confirmar, saldo: +d.saldo }));
-    eventos.forEach(e => { e.valor = e.valor == null ? null : +e.valor; e.vinho = e.vinho || {}; e.participantes = e.participantes || []; });
+    eventos.forEach(e => { e.valor = e.valor == null ? null : +e.valor; e.valor_dividir = e.valor_dividir == null ? null : +e.valor_dividir; e.vinho = e.vinho || {}; e.participantes = e.participantes || []; });
     pagamentos.forEach(p => { p.valor = +p.valor; });
     config = {}; cf.forEach(c => { config[c.chave] = c.valor; });
     _carregadoEm = Date.now();
@@ -618,9 +618,11 @@ function folhaEvento(id) {
     if (!ev.valor) {
         html += `<p class="f-texto">${ev.estado === 'por_comprar' ? 'Ainda sem preço' : 'Sem preço registado — ninguém deve nada por esta prenda'}. ${n} pessoa${n === 1 ? '' : 's'} a dividir: ${ev.participantes.map(esc).join(', ')}.</p>`;
     } else {
-        const quota = ds.length ? ds[0].quota : ev.valor;
-        const parteResp = Math.round((ev.valor - quota * ds.length) * 100) / 100;
-        html += `<p class="f-texto"><b>${eur(ev.valor)}</b> ÷ ${n} = <b>${eur(quota)}</b> cada${Math.abs(parteResp - quota) > 0.004 && Math.abs(parteResp - quota) < 0.1 ? ` <small>(o ${esc(ev.responsavel)} fica com ${eur(parteResp)} — o cêntimo do arredondamento)</small>` : ''}</p>
+        const div = valorADividir(ev);
+        const quota = ds.length ? ds[0].quota : div;
+        const excesso = Math.round((ev.valor - div) * 100) / 100;
+        const parteResp = Math.round((div - quota * ds.length) * 100) / 100;
+        html += `<p class="f-texto">${excesso > 0.004 ? `Custou <b>${eur(ev.valor)}</b>; divide-se <b>${eur(div)}</b> — os ${eur(excesso)} acima ficam com o ${esc(ev.responsavel)}.<br>` : ''}<b>${eur(div)}</b> ÷ ${n} = <b>${eur(quota)}</b> cada${Math.abs(parteResp - quota) > 0.004 && Math.abs(parteResp - quota) < 0.1 ? ` <small>(o ${esc(ev.responsavel)} fica com ${eur(parteResp)} — o cêntimo do arredondamento)</small>` : ''}</p>
           <div class="cartao tabela">
             <div class="tb-l">${avatar(ev.responsavel)}<span class="tb-n">${esc(ev.responsavel)}</span><span class="pill est-comprado">comprou</span></div>` +
             ds.map(d => {
@@ -657,6 +659,8 @@ function folhaEvento(id) {
     if (!gerir) html += `<p class="f-rodape">Quem mexe nesta prenda é o ${esc(ev.responsavel)} (ou o admin).</p>`;
     return html;
 }
+// O que se divide numa prenda: o preço, ou menos se ficou acima do limite.
+function valorADividir(ev) { return ev.valor_dividir != null ? ev.valor_dividir : (ev.valor || 0); }
 function vinhoFicha(v) {
     const linha2 = [v.produtor, v.tipo, v.regiao].filter(Boolean).map(esc).join(' · ');
     const factos = [];
@@ -698,7 +702,7 @@ function novoEvento(nome, data) {
         responsavel: aniv ? (responsavelPor(aniv) || '') : (AC.eu || ''),
         participantes: amigos.filter(a => a.ativo && a.nome !== aniv).map(a => a.nome),
         estado: (data || hoje()) < hoje() ? 'entregue' : 'por_comprar',
-        valor: '', notas: '', vinho: {}, pagos: [], pagosAntes: []
+        valor: '', dividir: '', dividirManual: false, notas: '', vinho: {}, pagos: [], pagosAntes: []
     };
     abrirFolha(folhaForm);
 }
@@ -711,6 +715,7 @@ function editarEvento(id) {
         id: ev.id, aniversariante: ev.aniversariante, data: ev.data, responsavel: ev.responsavel,
         participantes: ev.participantes.slice(), estado: ev.estado,
         valor: ev.valor == null ? '' : ev.valor.toFixed(2), notas: ev.notas || '',
+        dividir: ev.valor_dividir == null ? '' : ev.valor_dividir.toFixed(2), dividirManual: ev.valor_dividir != null,
         vinho: JSON.parse(JSON.stringify(ev.vinho || {})),
         pagos: pagos.slice(), pagosAntes: pagos
     };
@@ -724,6 +729,7 @@ function lerForm() {
     if ($('f-resp')) _form.responsavel = $('f-resp').value;
     if ($('f-data')) _form.data = $('f-data').value;
     if ($('f-valor')) _form.valor = $('f-valor').value;
+    if ($('f-dividir') && _form.dividirManual) _form.dividir = $('f-dividir').value;
     if ($('f-notas')) _form.notas = $('f-notas').value;
     CAMPOS_VINHO.forEach(k => {
         const e = $('fv-' + k);
@@ -751,6 +757,25 @@ function _formValor() {
     const v = parseFloat(String(_form.valor).replace(',', '.'));
     return v > 0 ? v : 0;
 }
+/* O LIMITE (config `limite_prenda`, Definições › admin): quem escolhe gastar
+   mais normalmente fica com o excedente. Por isso ao lado do preço há "A
+   dividir", que PROPÕE min(preço, limite) — e que se pode mudar, porque
+   "normalmente" não é "sempre". O servidor só garante que não passa do preço. */
+function limitePrenda() {
+    const v = Number(config.limite_prenda);
+    return v > 0 ? v : null;
+}
+function _formDividirAuto() {
+    const v = _formValor(), l = limitePrenda();
+    return v ? (l && v > l ? l : v) : 0;
+}
+function _formDividir() {
+    if (!_formValor()) return 0;
+    if (!_formDividirManual()) return _formDividirAuto();
+    const d = parseFloat(String(_form.dividir).replace(',', '.'));
+    return d >= 0 ? d : 0;
+}
+function _formDividirManual() { return _form.dividirManual && String(_form.dividir).trim() !== ''; }
 function folhaForm() {
     const f = _form;
     const v = f.vinho;
@@ -772,8 +797,12 @@ function folhaForm() {
         <div class="seg" role="group" aria-label="Estado">
           ${Object.keys(ESTADOS).map(k => `<button class="${f.estado === k ? 'on' : ''}" onclick="lerForm();_form.estado='${k}';redesenharFolha()">${ESTADOS[k]}</button>`).join('')}
         </div>
-        <label class="campo"><span>Preço pago (€) ${obrig ? '<b class="obrig">*</b>' : '<small>— opcional</small>'}</span>
-          <input id="f-valor" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(f.valor)}" placeholder="${obrig ? '' : 'sem preço, ninguém deve nada'}" oninput="lerForm();_formAtualizarQuota()"></label>
+        <div class="grelha2">
+          <label class="campo"><span>Preço pago ${obrig ? '<b class="obrig">*</b>' : '<small>(opcional)</small>'}</span>
+            <input id="f-valor" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(f.valor)}" placeholder="${obrig ? '€' : 'sem preço'}" oninput="lerForm();_formAtualizarQuota()"></label>
+          <label class="campo"><span>A dividir ${limitePrenda() ? `<small>(máx. ${eur(limitePrenda())})</small>` : ''}</span>
+            <input id="f-dividir" type="number" inputmode="decimal" step="0.01" min="0" value="${_formDividirManual() ? esc(f.dividir) : (_formValor() ? _formDividirAuto().toFixed(2) : '')}" oninput="_form.dividirManual=true;lerForm();_formAtualizarQuota()"></label>
+        </div>
         <p class="f-quota" id="f-quota">${_formQuotaTexto(n)}</p>
       </div>
 
@@ -829,7 +858,7 @@ function folhaForm() {
    toda a gente já pagou, e não pode receber uma notificação de dívida por
    causa do intervalo entre registar e ir marcar um a um. */
 function folhaFormPagos() {
-    if (!_formValor()) return '';
+    if (!_formDividir()) return '';
     const devedores = _formParticipantes().filter(p => p !== _form.responsavel);
     if (!devedores.length) return '';
     const todos = devedores.every(p => _form.pagos.includes(p));
@@ -854,7 +883,14 @@ function _formParticipantes() {
 }
 function _formQuotaTexto(n) {
     const valor = _formValor();
-    if (valor) return `${eur(valor)} ÷ ${n} = <b>${eur(Math.round(valor / n * 100) / 100)}</b> por pessoa`;
+    if (valor) {
+        const div = _formDividir(), l = limitePrenda();
+        let t = div > 0 ? `${eur(div)} ÷ ${n} = <b>${eur(Math.round(div / n * 100) / 100)}</b> por pessoa` : `Nada a dividir: o ${esc(_form.responsavel || '…')} fica com tudo.`;
+        if (div > valor + 0.004) t += `<br><span class="aviso-lim">⚠️ Não pode passar do preço pago.</span>`;
+        else if (valor - div > 0.004) t += `<br><span class="nada">Os ${eur(valor - div)} acima ficam com o ${esc(_form.responsavel || '…')}.</span>`;
+        if (l && div > l + 0.004) t += `<br><span class="aviso-lim">Acima do limite de ${eur(l)} — só se o grupo concordar.</span>`;
+        return t;
+    }
     return _formPrecoObrigatorio() ? `A dividir por ${n}.` : `<span class="nada">Sem preço: ninguém deve nada por esta prenda.</span>`;
 }
 function _formAtualizarQuota() {
@@ -863,11 +899,14 @@ function _formAtualizarQuota() {
     // Aparecer/desaparecer "quem já pagou" muda a folha: redesenha só quando
     // se passa de sem-preço a com-preço (ou vice-versa), para não roubar o
     // cursor a cada tecla.
+    // "A dividir" segue o preço (até ao limite) enquanto ninguém lhe mexer.
+    const dv = document.getElementById('f-dividir');
+    if (dv && !_formDividirManual() && document.activeElement !== dv) dv.value = _formValor() ? _formDividirAuto().toFixed(2) : '';
     const temPagos = !!document.getElementById('btn-guardar') && !!document.querySelector('.pago-atalhos');
-    if (!!_formValor() !== temPagos) {
+    if (!!_formDividir() !== temPagos) {
         redesenharFolha();
         const inp = document.getElementById('f-valor');
-        if (inp) { inp.focus(); const l = inp.value.length; try { inp.setSelectionRange(l, l); } catch (e) {} }
+        if (inp && document.activeElement !== dv) { inp.focus(); const l = inp.value.length; try { inp.setSelectionRange(l, l); } catch (e) {} }
         return;
     }
     el.innerHTML = _formQuotaTexto(Math.max(1, _formParticipantes().length));
@@ -893,17 +932,20 @@ async function guardarEvento() {
     const valor = f.valor === '' ? null : parseFloat(String(f.valor).replace(',', '.'));
     if (valor !== null && !(valor >= 0)) { toast('Preço inválido', false); return; }
     if (_formPrecoObrigatorio() && !(valor > 0)) { toast('Falta o preço da garrafa', false); document.getElementById('f-valor')?.focus(); return; }
+    const dividir = valor > 0 ? Math.round(_formDividir() * 100) / 100 : null;
+    if (dividir !== null && dividir > valor + 0.004) { toast('O valor a dividir não pode passar do preço pago', false); return; }
     if (f.vinho.nome && !f.vinho.origem) f.vinho.origem = 'manual';
     const btn = document.getElementById('btn-guardar');
     btn.disabled = true; btn.textContent = 'A guardar…';
     try {
         const r = await rpc('guardar_evento', {
             p_id: f.id, p_aniversariante: f.aniversariante, p_data: f.data, p_responsavel: f.responsavel,
-            p_participantes: _formParticipantes(), p_estado: f.estado, p_valor: valor, p_vinho: f.vinho, p_notas: f.notas
+            p_participantes: _formParticipantes(), p_estado: f.estado, p_valor: valor, p_vinho: f.vinho, p_notas: f.notas,
+            p_valor_dividir: dividir
         });
         // Quem já pagou, gravado ANTES do aviso: só as mudanças. Com o preço
         // alterado, quem estava marcado é marcado outra vez (acerta o saldo).
-        if (valor > 0) {
+        if (dividir > 0) {
             const devedores = (r.participantes || []).filter(p => p !== r.responsavel);
             for (const p of devedores) {
                 const quer = f.pagos.includes(p), tinha = f.pagosAntes.includes(p);
@@ -1110,6 +1152,10 @@ async function renderDefinicoes() {
               <span class="tb-v">${a.dia ? a.dia + ' ' + MESES[a.mes - 1] : '<i>sem data</i>'}</span></button>`).join('') + `</div>
           <button class="btn ghost largo" onclick="editarAmigo(null)">+ Amigo</button>
 
+          <h2 class="sec">Limite por prenda</h2>
+          <p class="sec-nota">O que se divide no máximo. Quem gastar mais fica com o excedente (a app propõe; quem regista pode mudar).</p>
+          <div class="cartao linha-form"><input type="number" inputmode="decimal" step="0.01" min="0" id="cfg-limite" placeholder="sem limite" value="${limitePrenda() || ''}"><button class="btn prim" onclick="guardarConfig('limite_prenda', Number(document.getElementById('cfg-limite').value) || 0)">Guardar</button></div>
+
           <h2 class="sec">Desde quando</h2>
           <p class="sec-nota">A partir desta data a app propõe registar as prendas dos aniversários que já passaram.</p>
           <div class="cartao linha-form"><input type="date" id="cfg-inicio" value="${esc(inicioGrupo())}"><button class="btn prim" onclick="guardarInicio()">Guardar</button></div>
@@ -1147,9 +1193,11 @@ async function ignorarPedido(i) {
 }
 async function guardarInicio() {
     const v = document.getElementById('cfg-inicio').value;
-    if (!v) return;
+    if (v) guardarConfig('inicio', v);
+}
+async function guardarConfig(chave, valor) {
     try {
-        await sbReq('POST', 'config', { chave: 'inicio', valor: v, atualizado_em: new Date().toISOString() }, { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
+        await sbReq('POST', 'config', { chave, valor, atualizado_em: new Date().toISOString() }, { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
         await recarregar();
         toast('✓ Guardado');
     } catch (e) { toast('⚠️ ' + e.message, false); }

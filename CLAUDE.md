@@ -44,7 +44,7 @@ schema **`anniversarygifts`**.
 
 ## Decisões que seguram o resto
 - **Uma só fonte de cêntimos: a view `anniversarygifts.dividas`.** A quota é
-  `round(valor / nº participantes, 2)`, quem compra não aparece e absorve o
+  `round(coalesce(valor_dividir, valor) / nº participantes, 2)`, quem compra não aparece e absorve o
   cêntimo que sobrar. A app E a Edge Function das notificações leem a view;
   **ninguém recalcula uma quota**. É a lição do SplitBill (o mesmo David a
   17.50 no PDF e 17.51 nas dívidas). Sítio novo que mostre quanto alguém
@@ -120,6 +120,17 @@ para outro separador, não entre os cartões.
   **exatamente a zero** (tira o "já paguei" pendente, que pode ter outro
   valor, e mete um confirmado pelo saldo); desmarcar apaga os pagamentos
   dessa pessoa nessa prenda.
+
+## O limite por prenda (`valor_dividir`)
+Há um valor máximo combinado (`config.limite_prenda`, Definições › admin).
+Quem escolhe gastar mais **normalmente** fica com o excedente — por isso o
+que se DIVIDE (`eventos.valor_dividir`) pode ser menos do que o que se PAGOU
+(`valor`). No formulário, "A dividir" fica ao lado do preço e **propõe**
+`min(preço, limite)`, mas pode mudar-se ("normalmente" não é "sempre"); o
+servidor só garante que não passa do preço. `NULL` = divide-se o preço todo.
+A view `dividas` usa `coalesce(valor_dividir, valor)` — continua a ser a
+única fonte de cêntimos, e o excedente fica com quem comprou, como o cêntimo
+do arredondamento.
 
 ## Notificações (`prendas-notificar`)
 O cliente só diz **de que se trata** (`evento_id`, `pagamento_id`); valores,
