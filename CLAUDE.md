@@ -39,8 +39,12 @@ schema **`anniversarygifts`**.
   primeira lista de amigos, copiada de `splitbill.amigo_users`.
 - `prendas-notificar.ts`, `prendas-vinho.ts` — Edge Functions (Deno). **Não
   correm no site**: `supabase functions deploy <nome>`.
-- `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
-  descartável (encoder PNG à mão); não há fonte guardada.
+- `icone-original.png` — o ícone da app (garrafa + prenda), escolhido pelo
+  dono. É a FONTE: `icon-512.png`, `apple-touch-icon.png` e `logo.png`
+  (cabeçalho, separador Prendas, splash e login) são recortes dele — o
+  miolo, sem a moldura clara de fora (quadrado de 1040 px centrado em
+  627,625), redimensionado num canvas do Chromium. Ícone novo = refazer os
+  três a partir do original, não à mão.
 
 ## Decisões que seguram o resto
 - **Uma só fonte de cêntimos: a view `anniversarygifts.dividas`.** A quota é

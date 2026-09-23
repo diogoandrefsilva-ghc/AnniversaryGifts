@@ -50,7 +50,7 @@ small { color: var(--mu); }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   color: #fff; transition: opacity .28s ease;
 }
-.pg-splash-logo { font-size: 58px; line-height: 1; }
+.pg-splash-logo { width: 96px; height: 96px; border-radius: 26px; box-shadow: 0 12px 30px rgba(20, 10, 60, .35); }
 .pg-splash-title { font-size: 24px; font-weight: 800; letter-spacing: .2px; }
 .pg-spin { width: 26px; height: 26px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: pg-spin .8s linear infinite; }
 @keyframes pg-spin { to { transform: rotate(360deg); } }
@@ -62,6 +62,7 @@ small { color: var(--mu); }
   background: linear-gradient(150deg, var(--pri-dk), var(--pri) 60%, var(--coral));
 }
 .auth-emoji { font-size: 46px; margin-bottom: 6px; }
+.auth-logo { width: 76px; height: 76px; border-radius: 20px; margin-bottom: 8px; box-shadow: 0 10px 26px rgba(20, 10, 60, .3); }
 .auth-page h2 { font-size: 28px; font-weight: 800; }
 .auth-faixa { width: 46px; height: 4px; background: var(--sol); border-radius: 2px; margin: 10px 0 14px; }
 .auth-sub { font-size: 15px; color: rgba(255,255,255,.88); max-width: 330px; margin-bottom: 22px; }
@@ -92,7 +93,7 @@ small { color: var(--mu); }
   background: rgba(245, 244, 251, .92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .topo-tit { display: flex; align-items: center; gap: 8px; }
-.topo-logo { font-size: 24px; }
+.topo-logo { width: 36px; height: 36px; border-radius: 11px; box-shadow: var(--sombra); }
 .topo h1 { font-size: 24px; font-weight: 800; color: var(--pri-dk); }
 .topo-btn { background: #fff; border: none; color: var(--pri); padding: 8px; border-radius: 12px; cursor: pointer; display: flex; box-shadow: var(--sombra); }
 main { max-width: 640px; margin: 0 auto; padding: 4px 16px calc(env(safe-area-inset-bottom, 0px) + 96px); }
@@ -108,6 +109,9 @@ main { max-width: 640px; margin: 0 auto; padding: 4px 16px calc(env(safe-area-in
 .tab span { font-size: 21px; filter: grayscale(1); opacity: .55; }
 .tab.on { color: var(--pri); background: var(--pri-lt); }
 .tab.on span { filter: none; opacity: 1; }
+/* O ícone da app no separador Prendas: mesmo tratamento dos emojis (cinzento quando inativo). */
+.tab-ic { width: 26px; height: 26px; border-radius: 8px; filter: grayscale(1); opacity: .55; }
+.tab.on .tab-ic { filter: none; opacity: 1; }
 .tab-badge { position: absolute; top: 0; left: calc(50% + 7px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--coral); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; line-height: 18px; }
 
 /* ── TIPOGRAFIA DAS PÁGINAS ── */

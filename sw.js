@@ -3,7 +3,7 @@
    browser o index.html novo com o app.js velho da cache — botões novos a
    chamar funções que ainda não existem, sem erro visível. Já aconteceu nas
    apps irmãs. */
-const CACHE_NAME = 'pg-cache-v4';
+const CACHE_NAME = 'pg-cache-v5';
 
 self.addEventListener('install', () => self.skipWaiting());
 
