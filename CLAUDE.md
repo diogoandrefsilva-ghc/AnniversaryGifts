@@ -39,12 +39,18 @@ schema **`anniversarygifts`**.
   primeira lista de amigos, copiada de `splitbill.amigo_users`.
 - `prendas-notificar.ts`, `prendas-vinho.ts` — Edge Functions (Deno). **Não
   correm no site**: `supabase functions deploy <nome>`.
-- `icone-original.png` — o ícone da app (garrafa + prenda), escolhido pelo
-  dono. É a FONTE: `icon-512.png`, `apple-touch-icon.png` e `logo.png`
-  (cabeçalho, separador Prendas, splash e login) são recortes dele — o
-  miolo, sem a moldura clara de fora (quadrado de 1040 px centrado em
-  627,625), redimensionado num canvas do Chromium. Ícone novo = refazer os
-  três a partir do original, não à mão.
+- `icone-original.png` / `icone-transparente.png` — o ícone (garrafa +
+  prenda), escolhido pelo dono, nas duas versões que ele deu. São as FONTES:
+  `icon-512.png` e `apple-touch-icon.png` (ícone da app, precisa de fundo)
+  saem do original, recortado ao miolo sem a moldura clara (quadrado de
+  1040 px centrado em 627,625); `logo.png` (cabeçalho, separador Prendas,
+  splash, login) sai do transparente, aparado ao desenho. Tudo num canvas
+  do Chromium — ícone novo = refazer a partir das fontes, não à mão.
+- **Cada `<img>` leva `width`/`height` no próprio HTML, e o CSS/JS vão com
+  `?v=N` no link.** Já aconteceu: o iPhone apanhou o `index.html` novo com o
+  `style.css` antigo (o CDN do GitHub Pages guarda ~10 min) e os logos
+  saíram no tamanho natural, a ocupar meio ecrã. Mexeste em `style.css` ou
+  `app.js`? Sobe o `?v=` no `index.html` e o `CACHE_NAME` no `sw.js`.
 
 ## Decisões que seguram o resto
 - **Uma só fonte de cêntimos: a view `anniversarygifts.dividas`.** A quota é

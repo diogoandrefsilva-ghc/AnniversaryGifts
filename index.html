@@ -13,12 +13,12 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <!-- Splash: tapa o HTML cru enquanto a sessão carrega -->
 <div id="pg-splash">
-  <img class="pg-splash-logo" src="logo.png" alt="">
+  <img class="pg-splash-logo" src="logo.png" alt="" width="104" height="104">
   <div class="pg-splash-title">Prendas de Anos</div>
   <div class="pg-spin"></div>
 </div>
@@ -32,7 +32,7 @@ setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }
 
 <!-- ═══ Autenticação ═══ -->
 <div class="auth-page" id="page-login">
-  <img class="auth-logo" src="logo.png" alt="">
+  <img class="auth-logo" src="logo.png" alt="" width="84" height="84">
   <h2>Prendas de Anos</h2>
   <div class="auth-faixa"></div>
   <div class="auth-sub">A garrafa que cada um oferece ao seguinte. Entra com a mesma conta do SplitBill.</div>
@@ -69,7 +69,7 @@ setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }
 <div id="app" hidden>
   <header class="topo">
     <div class="topo-tit">
-      <img class="topo-logo" src="logo.png" alt="" aria-hidden="true">
+      <img class="topo-logo" src="logo.png" alt="" aria-hidden="true" width="36" height="36">
       <h1 id="topo-titulo">Prendas</h1>
     </div>
     <button class="topo-btn" onclick="irPara('definicoes')" aria-label="Definições">
@@ -87,7 +87,7 @@ setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }
 
   <nav class="tabbar" aria-label="Secções">
     <button class="tab on" data-tab="inicio" onclick="irPara('inicio')"><span aria-hidden="true">🏠</span>Início</button>
-    <button class="tab" data-tab="prendas" onclick="irPara('prendas')"><img class="tab-ic" src="logo.png" alt="" aria-hidden="true">Prendas</button>
+    <button class="tab" data-tab="prendas" onclick="irPara('prendas')"><img class="tab-ic" src="logo.png" alt="" aria-hidden="true" width="26" height="26">Prendas</button>
     <button class="tab" data-tab="dividas" onclick="irPara('dividas')"><span aria-hidden="true">💶</span>Dívidas<i class="tab-badge" id="badge-dividas" hidden></i></button>
     <button class="tab" data-tab="ciclo" onclick="irPara('ciclo')"><span aria-hidden="true">🎂</span>Ciclo</button>
   </nav>
@@ -102,6 +102,6 @@ setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
