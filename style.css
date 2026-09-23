@@ -383,3 +383,13 @@ details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color
 .cat-img { width: 56px; height: 76px; object-fit: contain; border-radius: 10px; }
 .cat-txt > b { text-transform: capitalize; }
 .cat-vazio { color: var(--mu); }
+
+/* Notificações: o aviso fixo do Início e a folha que aparece ao entrar */
+.push-aviso { display: flex; align-items: center; gap: 10px; background: var(--sol-lt); box-shadow: none; margin-bottom: 12px; font-size: 14px; line-height: 1.35; }
+.push-aviso .pa-ic { font-size: 22px; flex-shrink: 0; }
+.push-aviso .pa-txt { flex: 1; min-width: 0; }
+.push-aviso[role=button] { cursor: pointer; }
+.push-aviso .btn { flex-shrink: 0; }
+.push-folha { text-align: center; }
+.push-folha .pf-ic { font-size: 52px; margin: 4px 0 6px; }
+.push-folha .f-acoes { justify-content: center; }

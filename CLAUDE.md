@@ -186,6 +186,19 @@ dos últimos 45 dias — registar o histórico não acorda ninguém), `lembrete`
 Mesmo par VAPID do SplitBill (os secrets são do projeto); a tabela de
 subscriptions é própria porque o service worker é outro.
 
+**Insistir com quem não as tem** (pedido do dono), em dois níveis:
+- um **aviso fixo no topo do Início** enquanto não estiverem ativas NESTE
+  dispositivo (`pushAvisoHTML`) — texto curto, porque fica lá sempre;
+- uma **folha ao entrar** (`pushConvidar` → `folhaPush`), **no máximo de 3 em
+  3 dias** (`pg_push_adiado` no localStorage, marcado quando se MOSTRA —
+  fechar no ✕ também é "agora não"). Mais do que isso e o "Agora não" deixava
+  de querer dizer alguma coisa.
+Três casos (`_pushEstado`): `pedir` (tem botão Ativar — o
+`requestPermission` precisa do toque); `negado` (o browser já não deixa a app
+perguntar: só se explica onde se liga); `instalar` (iPhone no Safari: sem a
+app no ecrã principal não há push nenhum). O estado é por DISPOSITIVO, não
+por conta — é a subscription que conta.
+
 ## 29 de fevereiro
 Nos anos comuns o aniversário conta a **1 de março** (`dataAnos`), não a 28 —
 é quando o João Paulo festeja. Na ordem do ciclo continua a valer 29/fev.

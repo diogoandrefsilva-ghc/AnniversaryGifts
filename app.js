@@ -442,6 +442,8 @@ function renderInicio() {
         html += `<div class="cartao aviso">Ainda não há datas de anos na lista de amigos.${AC.admin ? ' Mete-as em <a href="#" onclick="irPara(\'definicoes\');return false">Definições › Amigos</a>.' : ' O admin trata disso.'}</div>`;
     }
 
+    html += pushAvisoHTML();
+
     // Os quatro cartões grandes: o que se quer saber ao abrir a app.
     html += `<div class="hero">${cartaoProximoAnos(prox)}${cartaoMinhaCompra(prox)}${cartaoUltimaRecebida()}${cartaoMinhaConta()}</div>`;
 
@@ -1392,6 +1394,7 @@ async function pushRenderStatus() {
     const ativo = !!(await pushSubAtual());
     box.innerHTML = `<button class="btn ${ativo ? 'ghost' : 'prim'} largo" onclick="${ativo ? 'pushDesativar()' : 'pushAtivar()'}">${ativo ? '🔕 Desativar notificações' : '🔔 Ativar notificações'}</button>
       <small>${ativo ? 'Ativas neste dispositivo.' : 'Para saberes quando te pagam, quando deves, e quando alguém confirma.'}</small>`;
+    await pushCalcularEstado(); renderInicio();   // o aviso do Início acompanha
 }
 async function pushAtivar() {
     try {
@@ -1417,11 +1420,77 @@ async function pushDesativar() {
     } catch (e) { toast('⚠️ ' + e.message, false); }
     pushRenderStatus();
 }
+/* Insistir com quem não as tem (pedido do dono): um AVISO fixo no Início
+   enquanto não estiverem ativas neste dispositivo, e uma FOLHA ao entrar —
+   esta no máximo de 3 em 3 dias, senão "Agora não" não queria dizer nada.
+   Estados (`_pushEstado`): 'ativo' · 'pedir' (nunca respondeu) · 'negado'
+   (recusou no browser — a app já não pode perguntar, só explicar onde se
+   liga) · 'instalar' (iPhone no Safari: sem estar no ecrã principal não há
+   push nenhum) · null (sem suporte e nada a fazer). */
+let _pushEstado = null;
+const PUSH_ADIAR_MS = 3 * 24 * 3600 * 1000;
+function _ehIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function _ehInstalada() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+async function pushCalcularEstado() {
+    if (!pushSuportado()) return (_pushEstado = _ehIOS() && !_ehInstalada() ? 'instalar' : null);
+    if (Notification.permission === 'denied') return (_pushEstado = 'negado');
+    if (Notification.permission === 'granted' && await pushSubAtual()) return (_pushEstado = 'ativo');
+    return (_pushEstado = 'pedir');
+}
+const PUSH_TXT = {
+    pedir: 'Ativa as notificações para saberes quando deves, quando te pagam e quando confirmam o teu pagamento.',
+    negado: 'As notificações estão bloqueadas neste dispositivo. Liga-as nas definições do browser (ou, no iPhone, em Definições › Notificações › Prendas) e volta a abrir a app.',
+    instalar: 'No iPhone, as notificações só funcionam com a app no ecrã principal: toca em Partilhar ⬆️ › "Adicionar ao ecrã principal" e abre-a a partir do ícone.'
+};
+// No Início vai a versão CURTA (fica lá sempre, não pode comer o ecrã); a
+// explicação inteira é para a folha — o aviso abre-a quando não há botão.
+const PUSH_CURTO = {
+    pedir: '<b>Notificações desligadas.</b> Não sabes quando deves nem quando te pagam.',
+    negado: '<b>Notificações bloqueadas</b> neste dispositivo. <u>Como ligar</u>',
+    instalar: '<b>Sem notificações</b> no Safari. <u>Instala a app</u>'
+};
+function pushAvisoHTML() {
+    if (!PUSH_TXT[_pushEstado]) return '';
+    return `<div class="cartao push-aviso"${_pushEstado === 'pedir' ? '' : ' role="button" onclick="abrirFolha(folhaPush)"'}><span class="pa-ic" aria-hidden="true">🔔</span>
+      <span class="pa-txt">${PUSH_CURTO[_pushEstado]}</span>
+      ${_pushEstado === 'pedir' ? `<button class="btn prim mini" onclick="pushAtivarDaqui()">Ativar</button>` : ''}</div>`;
+}
+function folhaPush() {
+    return `<div class="push-folha"><div class="pf-ic" aria-hidden="true">🔔</div>
+      <h3 class="f-tit">Não percas nada</h3>
+      <p class="f-texto">${PUSH_TXT[_pushEstado] || ''}</p>
+      <div class="f-acoes">
+        <button class="btn ghost" onclick="pushAdiar()">Agora não</button>
+        ${_pushEstado === 'pedir' ? `<button class="btn prim" onclick="pushAtivarDaqui()">🔔 Ativar</button>` : `<button class="btn prim" onclick="pushAdiar()">Percebi</button>`}
+      </div></div>`;
+}
+function pushAdiar() { fecharFolha(); }
+// Chamado ao entrar na app, depois do Início desenhado.
+async function pushConvidar() {
+    await pushCalcularEstado();
+    renderInicio();
+    if (!PUSH_TXT[_pushEstado]) return;
+    let adiado = 0;
+    try { adiado = +localStorage.getItem('pg_push_adiado') || 0; } catch (e) {}
+    if (Date.now() - adiado < PUSH_ADIAR_MS) return;
+    if (document.getElementById('folha').classList.contains('on')) return;
+    // Conta como mostrada logo aqui: fechar no ✕ ou no fundo também é "agora não".
+    try { localStorage.setItem('pg_push_adiado', String(Date.now())); } catch (e) {}
+    abrirFolha(folhaPush);
+}
+async function pushAtivarDaqui() {
+    await pushAtivar();
+    await pushCalcularEstado();
+    if (_pushEstado === 'ativo') { try { localStorage.removeItem('pg_push_adiado'); } catch (e) {} fecharFolha(); }
+    else if (_pushEstado === 'negado') redesenharFolha();
+    renderInicio();
+}
+
 // Se a permissão já foi dada (noutra altura), volta a subscrever sem
 // perguntar nada — um telemóvel novo da mesma pessoa não fica mudo.
 async function pushReativarSilencioso() {
     if (!pushSuportado() || Notification.permission !== 'granted') return;
-    if (!(await pushSubAtual())) pushAtivar();
+    if (!(await pushSubAtual())) await pushAtivar();
 }
 
 /* ── AUTH (Supabase) ────────────────────────────────────────────────────── */
@@ -1506,7 +1575,7 @@ async function sbAposLogin() {
     mostrarEcra('app');
     irPara('inicio');
     renderTudo();
-    pushReativarSilencioso();
+    pushReativarSilencioso().then(pushConvidar);
 }
 async function sbSolicitarAcesso() {
     const btn = document.getElementById('btn-solicitar');
