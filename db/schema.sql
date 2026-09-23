@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS anniversarygifts.config (
 INSERT INTO anniversarygifts.config (chave, valor)
 VALUES ('admin_email', to_jsonb('diogo.andre.f.silva@gmail.com'::text))
 ON CONFLICT (chave) DO NOTHING;
+-- A partir de que data o PREÇO é obrigatório numa prenda já comprada. Antes
+-- dela (as prendas passadas) pode ficar sem preço — e sem preço ninguém deve
+-- nada: há quem não se lembre, e não se quer obrigar ninguém a reconstituir.
+INSERT INTO anniversarygifts.config (chave, valor)
+VALUES ('preco_obrigatorio_desde', to_jsonb('2026-09-23'::text))
+ON CONFLICT (chave) DO NOTHING;
 
 -- ── Amigos ────────────────────────────────────────────────────────────
 -- O NOME é a identidade (é o que aparece nas prendas e nos pagamentos), o
@@ -206,6 +212,7 @@ DECLARE
   v_admin boolean := anniversarygifts.is_admin();
   v_part  text[];
   v_antes numeric;
+  v_desde date;
   r       anniversarygifts.eventos%ROWTYPE;
 BEGIN
   IF NOT anniversarygifts.is_allowed() THEN RAISE EXCEPTION 'Sem acesso.'; END IF;
@@ -216,6 +223,15 @@ BEGIN
     RAISE EXCEPTION 'Quem faz anos não compra a própria prenda.';
   END IF;
   IF p_valor IS NOT NULL AND p_valor < 0 THEN RAISE EXCEPTION 'Valor inválido.'; END IF;
+  -- Preço obrigatório daqui em diante, mas só depois de comprada: antes
+  -- disso ainda ninguém sabe quanto custa.
+  SELECT (valor #>> '{}')::date INTO v_desde
+    FROM anniversarygifts.config WHERE chave = 'preco_obrigatorio_desde';
+  IF coalesce(p_estado, 'por_comprar') <> 'por_comprar'
+     AND p_data >= coalesce(v_desde, DATE '2026-09-23')
+     AND coalesce(p_valor, 0) <= 0 THEN
+    RAISE EXCEPTION 'Falta o preço da garrafa.';
+  END IF;
   IF p_vinho IS NOT NULL AND (jsonb_typeof(p_vinho) <> 'object' OR length(p_vinho::text) > 20000) THEN
     RAISE EXCEPTION 'Ficha do vinho inválida.';
   END IF;
@@ -357,6 +373,43 @@ BEGIN
           anniversarygifts.meu_email(), anniversarygifts.meu_email(), now())
   RETURNING id INTO v_id;
   RETURN v_id;
+END;
+$$;
+
+-- "Este já pagou" / "afinal não pagou" — quem comprou (ou o admin), sobretudo
+-- ao REGISTAR uma prenda passada: marca-se logo quem já tinha pago, antes de
+-- sair qualquer aviso, para ninguém ser notificado por uma dívida que já não
+-- existe. Marcar = a conta dessa pessoa fica EXATAMENTE a zero: o "já paguei"
+-- pendente (que pode ter outro valor) sai, e entra um confirmado pelo saldo
+-- da view. Desmarcar = apaga os pagamentos dessa pessoa nesta prenda.
+CREATE OR REPLACE FUNCTION anniversarygifts.marcar_pago(p_evento bigint, p_devedor text, p_pago boolean)
+  RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = anniversarygifts, public
+AS $$
+DECLARE r anniversarygifts.eventos%ROWTYPE; v_saldo numeric;
+BEGIN
+  SELECT * INTO r FROM anniversarygifts.eventos WHERE id = p_evento;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Esta prenda já não existe.'; END IF;
+  IF NOT coalesce(anniversarygifts.is_admin() OR anniversarygifts.eu() = r.responsavel, false) THEN
+    RAISE EXCEPTION 'Só quem comprou a prenda (ou o admin) marca quem já pagou.';
+  END IF;
+  IF NOT p_devedor = ANY(r.participantes) OR p_devedor = r.responsavel THEN
+    RAISE EXCEPTION '% não deve nada nesta prenda.', p_devedor;
+  END IF;
+  IF NOT p_pago THEN
+    DELETE FROM anniversarygifts.pagamentos WHERE evento_id = p_evento AND devedor = p_devedor;
+    RETURN;
+  END IF;
+  DELETE FROM anniversarygifts.pagamentos
+   WHERE evento_id = p_evento AND devedor = p_devedor AND estado <> 'confirmado';
+  SELECT saldo INTO v_saldo FROM anniversarygifts.dividas
+   WHERE evento_id = p_evento AND devedor = p_devedor;
+  IF coalesce(v_saldo, 0) > 0 THEN
+    INSERT INTO anniversarygifts.pagamentos
+      (evento_id, devedor, credor, valor, estado, nota, criado_por, resolvido_por, resolvido_em)
+    VALUES (p_evento, p_devedor, r.responsavel, v_saldo, 'confirmado', 'marcado como pago por quem recebeu',
+            anniversarygifts.meu_email(), anniversarygifts.meu_email(), now());
+  END IF;
 END;
 $$;
 

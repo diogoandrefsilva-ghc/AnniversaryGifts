@@ -29,7 +29,10 @@ schema **`anniversarygifts`**.
   Prendas · **Dívidas** · Ciclo · **A prenda (ver)** · **A prenda
   (registar/editar)** · **O vinho: procurar informação** · **Pagamentos** ·
   Definições · Notificações push · Auth · Init.
-- `style.css` — todo o CSS (paleta bordô/dourado das apps de vinhos).
+- `style.css` — todo o CSS. Paleta de **festa** (violeta `--pri`, coral,
+  amarelo `--sol`) e fonte Nunito — **de propósito longe do bordô/dourado**
+  das apps de vinhos: já havia várias assim, e o dono quis variar. Não
+  voltar a puxar isto para o estilo da Garrafeira.
 - `sw.js` — service worker (cache + push). **Sobe `CACHE_NAME`** sempre que
   mexeres em `app.js`, `style.css` ou `index.html`.
 - `db/schema.sql` — o schema inteiro, idempotente. `db/seed-amigos.sql` —
@@ -58,7 +61,8 @@ schema **`anniversarygifts`**.
   acesso", pede, e o admin liga a conta a um nome (`ligar_email`).
 - **Escritas em `eventos` e `pagamentos` só por RPC SECURITY DEFINER**
   (`guardar_evento`, `apagar_evento`, `declarar_pagamento`,
-  `registar_recebido`, `resolver_pagamento`, `anular_pagamento`). As regras
+  `registar_recebido`, `resolver_pagamento`, `anular_pagamento`,
+  `marcar_pago`). As regras
   vivem lá, num sítio só. Resumo: regista/edita a prenda **quem compra ou o
   admin**; quem compra não muda o aniversariante nem passa a
   responsabilidade (isso é do admin); declara quem deve; aceita/recusa quem
@@ -90,8 +94,32 @@ catalogo_id`.
   `google_search`; o corpo lê-se DENTRO do ciclo e um 200 vazio passa ao
   modelo seguinte e, se nenhum escrever, é **erro** (com o `finishReason`),
   nunca "não encontrei"; regista cada chamada em `ia_uso.registos`
-  (`app: "anniversarygifts"`) num try/catch que engole tudo. **Se mexeres na
+  (`app: "anniversarygifts"`) num try/catch que engole tudo — e está
+  registada em `ia_uso.funcoes` (`grounding = true`), que é de onde a app
+  dos custos tira a regra de faturação da pesquisa. **Função nova que chame
+  o Gemini = linha nova em `ia_uso.funcoes`**, senão o custo sai errado. **Se mexeres na
   escolha de modelo aqui, vai ver as outras no mesmo dia.**
+
+## O ecrã inicial: quatro cartões grandes
+Próximo aniversário (e quem compra) · a próxima prenda que EU compro · a
+última que recebi · a minha conta (a pagar / a receber). Por baixo só o que
+pede ação (pagamentos para confirmar, aniversários por registar). O dono
+gosta de inícios assim, com cartões grandes — lista nova vai por baixo ou
+para outro separador, não entre os cartões.
+
+## O preço e "quem já pagou"
+- **Preço obrigatório daqui em diante, opcional para trás.** A partir de
+  `config.preco_obrigatorio_desde` (2026-09-23) uma prenda já comprada tem
+  de ter preço — confirmado na app E na `guardar_evento`. Antes dessa data
+  pode ficar sem preço, e **sem preço ninguém deve nada** (a view não gera
+  linhas): não se obriga ninguém a reconstituir o que pagou em março.
+- **"Quem já pagou" marca-se no próprio formulário** (`folhaFormPagos`),
+  gravado pela `marcar_pago` ANTES de sair o aviso `divida`. Senão, numa
+  prenda passada, toda a gente recebia uma notificação de dívida no
+  intervalo entre registar e ir marcar um a um. Marcar deixa a conta
+  **exatamente a zero** (tira o "já paguei" pendente, que pode ter outro
+  valor, e mete um confirmado pelo saldo); desmarcar apaga os pagamentos
+  dessa pessoa nessa prenda.
 
 ## Notificações (`prendas-notificar`)
 O cliente só diz **de que se trata** (`evento_id`, `pagamento_id`); valores,

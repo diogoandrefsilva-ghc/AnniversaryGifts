@@ -414,25 +414,13 @@ function renderInicio() {
         html += `<div class="cartao aviso">Ainda não há datas de anos na lista de amigos.${AC.admin ? ' Mete-as em <a href="#" onclick="irPara(\'definicoes\');return false">Definições › Amigos</a>.' : ' O admin trata disso.'}</div>`;
     }
 
-    // 1. A garrafa que me cabe comprar (a próxima, se for nos próximos 60 dias
-    //    e ainda não estiver comprada).
-    if (AC.eu) {
-        const meu = prox.find(x => (x.evento ? x.evento.responsavel : responsavelPor(x.nome)) === AC.eu
-            && (!x.evento || x.evento.estado === 'por_comprar'));
-        if (meu && diasEntre(h, meu.data) <= 60) {
-            html += `
-              <div class="cartao destaque">
-                <div class="dq-tit">🛒 Compras tu a garrafa</div>
-                <div class="dq-txt">Os anos do <b>${esc(meu.nome)}</b> são a <b>${fmtData(meu.data, false)}</b> (${quandoTexto(meu.data)}).</div>
-                <button class="btn prim" onclick="${meu.evento ? `abrirEvento(${meu.evento.id})` : `novoEvento('${escJs(meu.nome)}','${meu.data}')`}">${meu.evento ? 'Ver a prenda' : 'Registar a prenda'}</button>
-              </div>`;
-        }
-    }
+    // Os quatro cartões grandes: o que se quer saber ao abrir a app.
+    html += `<div class="hero">${cartaoProximoAnos(prox)}${cartaoMinhaCompra(prox)}${cartaoUltimaRecebida()}${cartaoMinhaConta()}</div>`;
 
-    // 2. Pagamentos que me declararam e esperam por mim.
+    // Pagamentos que me declararam e esperam por mim.
     const conf = pagamentosParaConfirmar();
     if (conf.length) {
-        html += `<h2 class="sec">Para confirmar</h2><div class="lista">` + conf.map(p => {
+        html += `<h2 class="sec">Para confirmar <span class="sec-tot">${conf.length}</span></h2><div class="lista">` + conf.map(p => {
             const ev = eventoPorId(p.evento_id);
             return `<div class="cartao linha">${avatar(p.devedor)}
               <span class="ln-txt"><b>${esc(p.devedor)}</b> diz que pagou <b>${eur(p.valor)}</b><small>prenda do ${esc(ev ? ev.aniversariante : '?')}</small></span>
@@ -440,22 +428,7 @@ function renderInicio() {
         }).join('') + `</div>`;
     }
 
-    // 3. O que eu devo.
-    const devo = dividas.filter(d => d.devedor === AC.eu && d.saldo > 0.004);
-    if (devo.length) {
-        html += `<h2 class="sec">Deves <span class="sec-tot">${eur(devo.reduce((s, d) => s + d.saldo, 0))}</span></h2><div class="lista">` + devo.map(d => {
-            const ev = eventoPorId(d.evento_id);
-            return `<div class="cartao linha" onclick="abrirEvento(${d.evento_id})">${avatar(d.credor)}
-              <span class="ln-txt"><b>${eur(d.saldo)}</b> a ${esc(d.credor)}<small>prenda do ${esc(ev ? ev.aniversariante : '?')} · ${ev ? fmtData(ev.data) : ''}</small></span>
-              ${d.por_confirmar > 0 ? '<span class="pill espera">⏳ por confirmar</span>' : `<button class="btn mini prim" onclick="event.stopPropagation();declararPagamento(${d.evento_id})">Já paguei</button>`}</div>`;
-        }).join('') + `</div>`;
-    }
-
-    // 4. Os próximos anos.
-    html += `<h2 class="sec">Próximos anos</h2>`;
-    html += prox.length ? `<div class="lista">` + prox.slice(0, 4).map(linhaAniversario).join('') + `</div>` : vazio('Sem aniversários marcados.');
-
-    // 5. Aniversários passados sem prenda registada (o grupo já começou antes da app).
+    // Aniversários passados sem prenda registada (o grupo já começou antes da app).
     const falta = aniversariosPorRegistar();
     if (falta.length) {
         html += `<h2 class="sec">Por registar <span class="sec-tot">${falta.length}</span></h2>
@@ -463,6 +436,63 @@ function renderInicio() {
           <div class="lista">` + falta.slice().reverse().map(linhaAniversario).join('') + `</div>`;
     }
     el.innerHTML = html;
+}
+// 1. Quem faz anos a seguir, e quem compra.
+function cartaoProximoAnos(prox) {
+    const x = prox[0];
+    if (!x) return `<div class="hc anos largo"><span class="hc-rot">Próximo aniversário</span><span class="hc-med">Sem datas marcadas</span></div>`;
+    const resp = x.evento ? x.evento.responsavel : responsavelPor(x.nome);
+    const n = diasEntre(hoje(), x.data);
+    const click = x.evento ? `abrirEvento(${x.evento.id})` : `irPara('ciclo')`;
+    return `<button class="hc anos largo" onclick="${click}">
+        <span class="hc-deco" aria-hidden="true">🎂</span>
+        <span class="hc-rot">Próximo aniversário</span>
+        <span class="hc-big">${esc(x.nome)}${x.nome === AC.eu ? ' <small style="color:inherit;opacity:.8">(tu!)</small>' : ''}</span>
+        <span class="hc-txt">${fmtData(x.data, false)} · ${n === 0 ? 'é hoje! 🎉' : quandoTexto(x.data)}</span>
+        <span class="hc-pe"><span class="hc-chip">🛒 compra ${resp ? esc(resp) + (resp === AC.eu ? ' (tu)' : '') : '—'}</span>${x.evento ? `<span class="hc-chip">${ESTADOS[x.evento.estado]}</span>` : ''}</span>
+      </button>`;
+}
+// 2. A próxima garrafa que ME cabe comprar.
+function cartaoMinhaCompra(prox) {
+    if (!AC.eu) return '';
+    const x = prox.find(p => (p.evento ? p.evento.responsavel : responsavelPor(p.nome)) === AC.eu && !(p.evento && p.evento.estado === 'entregue'));
+    if (!x) return `<div class="hc compra calma"><span class="hc-rot">A tua próxima prenda</span><span class="hc-med">Nada a comprar</span><span class="hc-txt">Não estás no ciclo, ou já está tudo entregue.</span></div>`;
+    const n = diasEntre(hoje(), x.data);
+    const urgente = n <= 30 && (!x.evento || x.evento.estado === 'por_comprar');
+    const click = x.evento ? `abrirEvento(${x.evento.id})` : `novoEvento('${escJs(x.nome)}','${x.data}')`;
+    return `<button class="hc compra${urgente ? '' : ' calma'}" onclick="${click}">
+        <span class="hc-deco" aria-hidden="true">🎁</span>
+        <span class="hc-rot">A tua próxima prenda</span>
+        <span class="hc-med">Para o ${esc(x.nome)}</span>
+        <span class="hc-txt">${fmtData(x.data, false)} · ${quandoTexto(x.data)}</span>
+        <span class="hc-pe"><span class="hc-chip">${x.evento ? ESTADOS[x.evento.estado] : 'Registar ›'}</span></span>
+      </button>`;
+}
+// 3. A última garrafa que me ofereceram.
+function cartaoUltimaRecebida() {
+    if (!AC.eu) return '';
+    const ev = eventos.filter(e => e.aniversariante === AC.eu && e.data <= hoje()).sort((a, b) => b.data.localeCompare(a.data))[0];
+    if (!ev) return `<div class="hc recebi"><span class="hc-rot">Última que recebeste</span><span class="hc-med">Ainda nenhuma</span><span class="hc-txt">Quando a tua prenda for registada, aparece aqui.</span></div>`;
+    const v = ev.vinho || {};
+    return `<button class="hc recebi" onclick="abrirEvento(${ev.id})">
+        <span class="hc-rot">Última que recebeste</span>
+        ${v.imagem_url ? `<img class="hc-img" src="${esc(v.imagem_url)}" alt="" onerror="this.remove()">` : ''}
+        <span class="hc-med">${v.nome ? esc(nomeVinho(v)) : '🍷 Garrafa sem nome'}</span>
+        <span class="hc-txt">do ${esc(ev.responsavel)} · ${fmtData(ev.data)}</span>
+      </button>`;
+}
+// 4. A minha conta: o que devo e o que tenho a receber.
+function cartaoMinhaConta() {
+    if (!AC.eu) return '';
+    const pagar = dividas.filter(d => d.devedor === AC.eu && d.saldo > 0.004).reduce((s, d) => s + d.saldo, 0);
+    const receber = dividas.filter(d => d.credor === AC.eu && d.saldo > 0.004).reduce((s, d) => s + d.saldo, 0);
+    return `<button class="hc conta largo" onclick="_soMinhas=true;irPara('dividas')">
+        <span class="hc-rot">A tua conta</span>
+        <span class="hc-duo">
+          <span><span class="hc-num ${pagar > 0.004 ? 'neg' : 'zero'}">${eur(pagar)}</span><span class="hc-sub">a pagar</span></span>
+          <span><span class="hc-num ${receber > 0.004 ? 'pos' : 'zero'}">${eur(receber)}</span><span class="hc-sub">a receber</span></span>
+        </span>
+      </button>`;
 }
 function linhaAniversario(x) {
     const resp = x.evento ? x.evento.responsavel : responsavelPor(x.nome);
@@ -586,7 +616,7 @@ function folhaEvento(id) {
     // A divisão
     html += `<h4 class="f-sec">Divisão</h4>`;
     if (!ev.valor) {
-        html += `<p class="f-texto">Ainda sem preço. ${n} pessoa${n === 1 ? '' : 's'} a dividir: ${ev.participantes.map(esc).join(', ')}.</p>`;
+        html += `<p class="f-texto">${ev.estado === 'por_comprar' ? 'Ainda sem preço' : 'Sem preço registado — ninguém deve nada por esta prenda'}. ${n} pessoa${n === 1 ? '' : 's'} a dividir: ${ev.participantes.map(esc).join(', ')}.</p>`;
     } else {
         const quota = ds.length ? ds[0].quota : ev.valor;
         const parteResp = Math.round((ev.valor - quota * ds.length) * 100) / 100;
@@ -668,18 +698,21 @@ function novoEvento(nome, data) {
         responsavel: aniv ? (responsavelPor(aniv) || '') : (AC.eu || ''),
         participantes: amigos.filter(a => a.ativo && a.nome !== aniv).map(a => a.nome),
         estado: (data || hoje()) < hoje() ? 'entregue' : 'por_comprar',
-        valor: '', notas: '', vinho: {}
+        valor: '', notas: '', vinho: {}, pagos: [], pagosAntes: []
     };
     abrirFolha(folhaForm);
 }
 function editarEvento(id) {
     const ev = eventoPorId(id);
     if (!ev) return;
+    // Quem já tem a conta a zero nesta prenda aparece marcado como "já pagou".
+    const pagos = dividasDoEvento(id).filter(d => d.saldo <= 0.004).map(d => d.devedor);
     _form = {
         id: ev.id, aniversariante: ev.aniversariante, data: ev.data, responsavel: ev.responsavel,
         participantes: ev.participantes.slice(), estado: ev.estado,
         valor: ev.valor == null ? '' : ev.valor.toFixed(2), notas: ev.notas || '',
-        vinho: JSON.parse(JSON.stringify(ev.vinho || {}))
+        vinho: JSON.parse(JSON.stringify(ev.vinho || {})),
+        pagos: pagos.slice(), pagosAntes: pagos
     };
     abrirFolha(folhaForm);
 }
@@ -702,6 +735,22 @@ function lerForm() {
         else _form.vinho[k] = val;
     });
 }
+/* O PREÇO: obrigatório daqui em diante (config `preco_obrigatorio_desde`,
+   confirmado outra vez pela `guardar_evento`), mas só numa garrafa já
+   comprada — antes disso ninguém sabe quanto custa. Nas prendas passadas é
+   opcional, e sem preço ninguém deve nada: não se obriga ninguém a
+   reconstituir quanto pagou em março. */
+function precoObrigatorioDesde() {
+    const v = config.preco_obrigatorio_desde;
+    return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : '2026-09-23';
+}
+function _formPrecoObrigatorio() {
+    return _form.estado !== 'por_comprar' && (_form.data || '') >= precoObrigatorioDesde();
+}
+function _formValor() {
+    const v = parseFloat(String(_form.valor).replace(',', '.'));
+    return v > 0 ? v : 0;
+}
 function folhaForm() {
     const f = _form;
     const v = f.vinho;
@@ -709,57 +758,63 @@ function folhaForm() {
     const opts = (sel, excluir) => `<option value=""></option>` + nomes.filter(n => n !== excluir).map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
     const campoV = (k, rot, tipo, extra) => `<label class="campo"><span>${rot}</span><input id="fv-${k}" type="${tipo || 'text'}" value="${esc(k === 'castas' ? [].concat(v.castas || []).join(', ') : (v[k] == null ? '' : v[k]))}" ${extra || ''}></label>`;
     const n = Math.max(1, _formParticipantes().length);
-    const valor = parseFloat(String(f.valor).replace(',', '.'));
+    const obrig = _formPrecoObrigatorio();
     return `
       <h3 class="f-tit">${f.id ? 'Editar prenda' : 'Registar prenda'}</h3>
-      ${AC.admin ? `
+
+      <div class="f-bloco">
+        ${AC.admin ? `
+          <div class="grelha2">
+            <label class="campo"><span>Faz anos</span><select id="f-aniv" onchange="lerForm();_formMudouAniv()">${opts(f.aniversariante)}</select></label>
+            <label class="campo"><span>Compra</span><select id="f-resp" onchange="lerForm();redesenharFolha()">${opts(f.responsavel, f.aniversariante)}</select></label>
+          </div>` : `<p class="f-texto" style="margin-top:0">🎂 <b>${esc(f.aniversariante)}</b> · compra <b>${esc(f.responsavel)}</b></p>`}
+        <label class="campo"><span>Data</span><input id="f-data" type="date" value="${esc(f.data)}" onchange="lerForm();redesenharFolha()"></label>
+        <div class="seg" role="group" aria-label="Estado">
+          ${Object.keys(ESTADOS).map(k => `<button class="${f.estado === k ? 'on' : ''}" onclick="lerForm();_form.estado='${k}';redesenharFolha()">${ESTADOS[k]}</button>`).join('')}
+        </div>
+        <label class="campo"><span>Preço pago (€) ${obrig ? '<b class="obrig">*</b>' : '<small>— opcional</small>'}</span>
+          <input id="f-valor" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(f.valor)}" placeholder="${obrig ? '' : 'sem preço, ninguém deve nada'}" oninput="lerForm();_formAtualizarQuota()"></label>
+        <p class="f-quota" id="f-quota">${_formQuotaTexto(n)}</p>
+      </div>
+
+      <div class="f-bloco">
+        <h4 class="f-sec">A garrafa</h4>
+        ${campoV('nome', 'Vinho', 'text', 'placeholder="ex.: Papa Figos" autocomplete="off"')}
         <div class="grelha2">
-          <label class="campo"><span>Faz anos</span><select id="f-aniv" onchange="lerForm();_formMudouAniv()">${opts(f.aniversariante)}</select></label>
-          <label class="campo"><span>Compra</span><select id="f-resp" onchange="lerForm();redesenharFolha()">${opts(f.responsavel, f.aniversariante)}</select></label>
-        </div>` : `<p class="f-texto">🎂 <b>${esc(f.aniversariante)}</b> · compra <b>${esc(f.responsavel)}</b></p>`}
-      <div class="grelha2">
-        <label class="campo"><span>Data</span><input id="f-data" type="date" value="${esc(f.data)}"></label>
-        <label class="campo"><span>Preço pago (€)</span><input id="f-valor" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(f.valor)}" oninput="lerForm();_formAtualizarQuota()"></label>
+          ${campoV('produtor', 'Produtor', 'text', 'placeholder="ex.: Casa Ferreirinha"')}
+          ${campoV('ano', 'Colheita', 'number', 'inputmode="numeric" min="1900" max="2100"')}
+        </div>
+        <button class="btn procura largo" id="btn-procurar" onclick="procurarVinho()">🔎 Procurar informação do vinho</button>
+        <div id="f-procura-res">${_procuraRelatorio || ''}</div>
+        <div class="grelha2">
+          <label class="campo"><span>Cor</span><select id="fv-tipo">${TIPOS_VINHO.map(t => `<option${(v.tipo || '') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          ${campoV('regiao', 'Região')}
+        </div>
+        ${campoV('castas', 'Castas <small>(separadas por vírgulas)</small>')}
+        <div class="grelha2">
+          ${campoV('preco_medio', 'Preço mercado', 'number', 'step="0.01" inputmode="decimal"')}
+          ${campoV('vivino_nota', 'Nota Vivino', 'number', 'step="0.1" min="1" max="5" inputmode="decimal"')}
+        </div>
+        ${campoV('loja', 'Comprado em', 'text', 'placeholder="loja, site…"')}
+        <details class="mais"${v.notas_prova || v.resumo || v.teor ? ' open' : ''}><summary>Mais sobre o vinho</summary>
+          <div class="grelha2">${campoV('teor', 'Álcool (%)', 'number', 'step="0.1"')}${campoV('estagio', 'Estágio')}</div>
+          ${campoV('vivino_url', 'Link Vivino', 'url')}
+          ${campoV('imagem_url', 'Link da fotografia', 'url')}
+          <label class="campo"><span>Notas de prova</span><textarea id="fv-notas_prova" rows="2">${esc(v.notas_prova || '')}</textarea></label>
+          <label class="campo"><span>Harmonização</span><textarea id="fv-harmonizacao" rows="2">${esc(v.harmonizacao || '')}</textarea></label>
+          <label class="campo"><span>Resumo</span><textarea id="fv-resumo" rows="3">${esc(v.resumo || '')}</textarea></label>
+        </details>
       </div>
-      <p class="f-quota" id="f-quota">${valor > 0 ? `${eur(valor)} ÷ ${n} = <b>${eur(Math.round(valor / n * 100) / 100)}</b> por pessoa` : `A dividir por ${n}.`}</p>
 
-      <div class="seg" role="group" aria-label="Estado">
-        ${Object.keys(ESTADOS).map(k => `<button class="${f.estado === k ? 'on' : ''}" onclick="lerForm();_form.estado='${k}';redesenharFolha()">${ESTADOS[k]}</button>`).join('')}
+      <div class="f-bloco">
+        <h4 class="f-sec">Quem divide <small>(${n})</small></h4>
+        <p class="sec-nota">Todos menos quem faz anos. Tira quem não entrou nesta.</p>
+        <div class="chips quem">${amigos.filter(a => a.nome !== f.aniversariante && (a.ativo || f.participantes.includes(a.nome))).map(a => {
+          const on = f.participantes.includes(a.nome) || a.nome === f.responsavel;
+          return `<button class="chip${on ? ' on' : ''}"${a.nome === f.responsavel ? ' disabled title="Quem compra divide sempre"' : ''} onclick="lerForm();_formTogglePart('${escJs(a.nome)}')">${esc(a.nome)}</button>`;
+        }).join('')}</div>
+        ${folhaFormPagos()}
       </div>
-
-      <h4 class="f-sec">A garrafa</h4>
-      ${campoV('nome', 'Vinho', 'text', 'placeholder="ex.: Papa Figos" autocomplete="off"')}
-      <div class="grelha2">
-        ${campoV('produtor', 'Produtor', 'text', 'placeholder="ex.: Casa Ferreirinha"')}
-        ${campoV('ano', 'Colheita', 'number', 'inputmode="numeric" min="1900" max="2100"')}
-      </div>
-      <button class="btn procura largo" id="btn-procurar" onclick="procurarVinho()">🔎 Procurar informação do vinho</button>
-      <div id="f-procura-res">${_procuraRelatorio || ''}</div>
-      <div class="grelha2">
-        <label class="campo"><span>Cor</span><select id="fv-tipo">${TIPOS_VINHO.map(t => `<option${(v.tipo || '') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-        ${campoV('regiao', 'Região')}
-      </div>
-      ${campoV('castas', 'Castas (separadas por vírgulas)')}
-      <div class="grelha2">
-        ${campoV('preco_medio', 'Preço de mercado (€)', 'number', 'step="0.01" inputmode="decimal"')}
-        ${campoV('vivino_nota', 'Nota Vivino', 'number', 'step="0.1" min="1" max="5" inputmode="decimal"')}
-      </div>
-      ${campoV('loja', 'Comprado em', 'text', 'placeholder="loja, site…"')}
-      <details class="mais"${v.notas_prova || v.resumo || v.teor ? ' open' : ''}><summary>Mais sobre o vinho</summary>
-        <div class="grelha2">${campoV('teor', 'Álcool (%)', 'number', 'step="0.1"')}${campoV('estagio', 'Estágio')}</div>
-        ${campoV('vivino_url', 'Link Vivino', 'url')}
-        ${campoV('imagem_url', 'Link da fotografia', 'url')}
-        <label class="campo"><span>Notas de prova</span><textarea id="fv-notas_prova" rows="2">${esc(v.notas_prova || '')}</textarea></label>
-        <label class="campo"><span>Harmonização</span><textarea id="fv-harmonizacao" rows="2">${esc(v.harmonizacao || '')}</textarea></label>
-        <label class="campo"><span>Resumo</span><textarea id="fv-resumo" rows="3">${esc(v.resumo || '')}</textarea></label>
-      </details>
-
-      <h4 class="f-sec">Quem divide <small>(${n})</small></h4>
-      <p class="sec-nota">Todos menos quem faz anos. Tira quem não entrou nesta.</p>
-      <div class="chips quem">${amigos.filter(a => a.nome !== f.aniversariante && (a.ativo || f.participantes.includes(a.nome))).map(a => {
-        const on = f.participantes.includes(a.nome) || a.nome === f.responsavel;
-        return `<button class="chip${on ? ' on' : ''}"${a.nome === f.responsavel ? ' disabled title="Quem compra divide sempre"' : ''} onclick="lerForm();_formTogglePart('${escJs(a.nome)}')">${esc(a.nome)}</button>`;
-      }).join('')}</div>
 
       <label class="campo"><span>Notas</span><textarea id="f-notas" rows="2" placeholder="opcional">${esc(f.notas)}</textarea></label>
 
@@ -769,18 +824,53 @@ function folhaForm() {
         <button class="btn prim" id="btn-guardar" onclick="guardarEvento()">Guardar</button>
       </div>`;
 }
+/* QUEM JÁ PAGOU — marca-se AQUI, no mesmo gesto de registar, e é gravado
+   ANTES de sair qualquer aviso. Sobretudo nas prendas passadas: quase
+   toda a gente já pagou, e não pode receber uma notificação de dívida por
+   causa do intervalo entre registar e ir marcar um a um. */
+function folhaFormPagos() {
+    if (!_formValor()) return '';
+    const devedores = _formParticipantes().filter(p => p !== _form.responsavel);
+    if (!devedores.length) return '';
+    const todos = devedores.every(p => _form.pagos.includes(p));
+    return `
+      <h4 class="f-sec">Quem já pagou ao ${esc(_form.responsavel || '…')}? <small>(${devedores.filter(p => _form.pagos.includes(p)).length}/${devedores.length})</small></h4>
+      <p class="sec-nota">Quem ficar por marcar fica a dever${diasEntre(_form.data || hoje(), hoje()) <= 45 ? ' e recebe um aviso' : ''}.</p>
+      <div class="pago-atalhos">
+        <button class="btn mini ghost" onclick="lerForm();_form.pagos=${todos ? '[]' : '_formParticipantes().filter(p=>p!==_form.responsavel)'};redesenharFolha()">${todos ? 'Desmarcar todos' : 'Todos já pagaram'}</button>
+      </div>
+      <div class="chips">${devedores.map(p => `<button class="chip pago${_form.pagos.includes(p) ? ' on' : ''}" onclick="lerForm();_formTogglePago('${escJs(p)}')">${_form.pagos.includes(p) ? '✓ ' : ''}${esc(p)}</button>`).join('')}</div>`;
+}
+function _formTogglePago(nome) {
+    const i = _form.pagos.indexOf(nome);
+    if (i >= 0) _form.pagos.splice(i, 1); else _form.pagos.push(nome);
+    redesenharFolha();
+}
 // Quem divide, como o servidor o vai gravar: sem quem faz anos, com quem
 // compra (mesmo que o chip dele tenha ficado desligado de uma troca).
 function _formParticipantes() {
     return [...new Set(_form.participantes.concat(_form.responsavel ? [_form.responsavel] : []))]
         .filter(p => p && p !== _form.aniversariante);
 }
+function _formQuotaTexto(n) {
+    const valor = _formValor();
+    if (valor) return `${eur(valor)} ÷ ${n} = <b>${eur(Math.round(valor / n * 100) / 100)}</b> por pessoa`;
+    return _formPrecoObrigatorio() ? `A dividir por ${n}.` : `<span class="nada">Sem preço: ninguém deve nada por esta prenda.</span>`;
+}
 function _formAtualizarQuota() {
     const el = document.getElementById('f-quota');
     if (!el || !_form) return;
-    const n = Math.max(1, _formParticipantes().length);
-    const valor = parseFloat(String(_form.valor).replace(',', '.'));
-    el.innerHTML = valor > 0 ? `${eur(valor)} ÷ ${n} = <b>${eur(Math.round(valor / n * 100) / 100)}</b> por pessoa` : `A dividir por ${n}.`;
+    // Aparecer/desaparecer "quem já pagou" muda a folha: redesenha só quando
+    // se passa de sem-preço a com-preço (ou vice-versa), para não roubar o
+    // cursor a cada tecla.
+    const temPagos = !!document.getElementById('btn-guardar') && !!document.querySelector('.pago-atalhos');
+    if (!!_formValor() !== temPagos) {
+        redesenharFolha();
+        const inp = document.getElementById('f-valor');
+        if (inp) { inp.focus(); const l = inp.value.length; try { inp.setSelectionRange(l, l); } catch (e) {} }
+        return;
+    }
+    el.innerHTML = _formQuotaTexto(Math.max(1, _formParticipantes().length));
 }
 function _formMudouAniv() {
     // Mudou quem faz anos: o ciclo volta a propor quem compra, e quem faz
@@ -802,6 +892,7 @@ async function guardarEvento() {
     if (!f.data) { toast('Falta a data', false); return; }
     const valor = f.valor === '' ? null : parseFloat(String(f.valor).replace(',', '.'));
     if (valor !== null && !(valor >= 0)) { toast('Preço inválido', false); return; }
+    if (_formPrecoObrigatorio() && !(valor > 0)) { toast('Falta o preço da garrafa', false); document.getElementById('f-valor')?.focus(); return; }
     if (f.vinho.nome && !f.vinho.origem) f.vinho.origem = 'manual';
     const btn = document.getElementById('btn-guardar');
     btn.disabled = true; btn.textContent = 'A guardar…';
@@ -810,15 +901,25 @@ async function guardarEvento() {
             p_id: f.id, p_aniversariante: f.aniversariante, p_data: f.data, p_responsavel: f.responsavel,
             p_participantes: _formParticipantes(), p_estado: f.estado, p_valor: valor, p_vinho: f.vinho, p_notas: f.notas
         });
+        // Quem já pagou, gravado ANTES do aviso: só as mudanças. Com o preço
+        // alterado, quem estava marcado é marcado outra vez (acerta o saldo).
+        if (valor > 0) {
+            const devedores = (r.participantes || []).filter(p => p !== r.responsavel);
+            for (const p of devedores) {
+                const quer = f.pagos.includes(p), tinha = f.pagosAntes.includes(p);
+                if (quer && (!tinha || r.valor_mudou)) await rpc('marcar_pago', { p_evento: r.id, p_devedor: p, p_pago: true });
+                else if (!quer && tinha) await rpc('marcar_pago', { p_evento: r.id, p_devedor: p, p_pago: false });
+            }
+        }
         _procuraRelatorio = '';
         await carregarDados();
         fecharFolha();
         if (!f.id) { fecharTodasFolhas(); abrirEvento(r.id); }
         renderTudo();
         toast('✓ Prenda guardada');
-        // Preço novo = dívidas novas → avisar quem ficou a dever. Só para
-        // prendas recentes: registar o histórico de março não deve acordar
-        // o telemóvel de ninguém.
+        // Preço novo = dívidas novas → avisar quem AINDA deve (a função só
+        // avisa saldos > 0, e quem já pagou acabou de ficar a zero). Só para
+        // prendas recentes: registar o histórico não acorda ninguém.
         if (r.valor_mudou && diasEntre(r.data, hoje()) <= 45) {
             edgeFn('prendas-notificar', { tipo: 'divida', evento_id: r.id }).catch(() => {});
         }
