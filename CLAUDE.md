@@ -172,6 +172,11 @@ no passado nasce "Entregue" e não notifica ninguém.
 - Um nome de amigo é a identidade (PK, e está em `participantes`, que é um
   array sem FK). **Não há renomear**: apagar só funciona para quem nunca
   entrou numa prenda; quem sai do grupo fica `ativo = false`.
+- **Campos de euros são `type="text" inputmode="decimal"`, nunca
+  `type="number"`**, lidos com `lerNum()` (vírgula ou ponto) e mostrados com
+  `numTxt()`. No iPhone em português o teclado dá vírgula, e um campo number
+  com "12," fica com `value` vazio: a app lia "sem preço", redesenhava a
+  folha e o campo aparecia limpo a meio de se escrever. Já aconteceu.
 - Edições **cirúrgicas**.
 
 ## Deploy

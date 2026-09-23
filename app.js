@@ -129,6 +129,14 @@ function esc(s) {
 }
 function escJs(s) { return esc(String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")); }
 function eur(v) { return '€' + (Number(v) || 0).toFixed(2); }
+/* Valores em euros nos CAMPOS: <input type="text" inputmode="decimal">, e
+   nunca type="number". No iPhone em português o teclado dá VÍRGULA, e um
+   campo number com "12," fica com value "" — a app lia isso como "sem preço",
+   redesenhava a folha e o campo aparecia limpo a meio de se escrever. Por
+   isso: texto, aceita vírgula ou ponto (`lerNum`), e mostra com vírgula
+   (`numTxt`). */
+function lerNum(s) { const v = parseFloat(String(s == null ? '' : s).replace(/\s/g, '').replace(',', '.')); return isFinite(v) ? v : NaN; }
+function numTxt(v) { return v == null || v === '' ? '' : Number(v).toFixed(2).replace('.', ','); }
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 function isoDe(y, m, d) { return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
@@ -210,7 +218,7 @@ function confirmar(titulo, msgHtml, textoOk, perigo) {
 function pedirValor(titulo, msgHtml, sugestao, textoOk) {
     return new Promise(res => {
         window._valRes = ok => {
-            const v = ok ? parseFloat(String(document.getElementById('f-valor-pedido').value).replace(',', '.')) : null;
+            const v = ok ? lerNum(document.getElementById('f-valor-pedido').value) : null;
             if (ok && !(v > 0)) { toast('Valor inválido', false); return; }
             window._valRes = null; fecharFolha(); res(ok ? Math.round(v * 100) / 100 : null);
         };
@@ -218,7 +226,7 @@ function pedirValor(titulo, msgHtml, sugestao, textoOk) {
           <h3 class="f-tit">${esc(titulo)}</h3>
           <p class="f-texto">${msgHtml}</p>
           <label class="campo"><span>Valor (€)</span>
-            <input type="number" id="f-valor-pedido" inputmode="decimal" step="0.01" min="0.01" value="${sugestao ? Number(sugestao).toFixed(2) : ''}">
+            <input type="text" id="f-valor-pedido" inputmode="decimal" autocomplete="off" value="${sugestao ? numTxt(sugestao) : ''}">
           </label>
           <div class="f-acoes">
             <button class="btn ghost" onclick="_valRes(false)">Cancelar</button>
@@ -714,8 +722,8 @@ function editarEvento(id) {
     _form = {
         id: ev.id, aniversariante: ev.aniversariante, data: ev.data, responsavel: ev.responsavel,
         participantes: ev.participantes.slice(), estado: ev.estado,
-        valor: ev.valor == null ? '' : ev.valor.toFixed(2), notas: ev.notas || '',
-        dividir: ev.valor_dividir == null ? '' : ev.valor_dividir.toFixed(2), dividirManual: ev.valor_dividir != null,
+        valor: ev.valor == null ? '' : numTxt(ev.valor), notas: ev.notas || '',
+        dividir: ev.valor_dividir == null ? '' : numTxt(ev.valor_dividir), dividirManual: ev.valor_dividir != null,
         vinho: JSON.parse(JSON.stringify(ev.vinho || {})),
         pagos: pagos.slice(), pagosAntes: pagos
     };
@@ -754,7 +762,7 @@ function _formPrecoObrigatorio() {
     return _form.estado !== 'por_comprar' && (_form.data || '') >= precoObrigatorioDesde();
 }
 function _formValor() {
-    const v = parseFloat(String(_form.valor).replace(',', '.'));
+    const v = lerNum(_form.valor);
     return v > 0 ? v : 0;
 }
 /* O LIMITE (config `limite_prenda`, Definições › admin): quem escolhe gastar
@@ -772,7 +780,7 @@ function _formDividirAuto() {
 function _formDividir() {
     if (!_formValor()) return 0;
     if (!_formDividirManual()) return _formDividirAuto();
-    const d = parseFloat(String(_form.dividir).replace(',', '.'));
+    const d = lerNum(_form.dividir);
     return d >= 0 ? d : 0;
 }
 function _formDividirManual() { return _form.dividirManual && String(_form.dividir).trim() !== ''; }
@@ -799,9 +807,9 @@ function folhaForm() {
         </div>
         <div class="grelha2">
           <label class="campo"><span>Preço pago ${obrig ? '<b class="obrig">*</b>' : '<small>(opcional)</small>'}</span>
-            <input id="f-valor" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(f.valor)}" placeholder="${obrig ? '€' : 'sem preço'}" oninput="lerForm();_formAtualizarQuota()"></label>
+            <input id="f-valor" type="text" inputmode="decimal" autocomplete="off" value="${esc(f.valor)}" placeholder="${obrig ? '€' : 'sem preço'}" oninput="lerForm();_formAtualizarQuota()"></label>
           <label class="campo"><span>A dividir ${limitePrenda() ? `<small>(máx. ${eur(limitePrenda())})</small>` : ''}</span>
-            <input id="f-dividir" type="number" inputmode="decimal" step="0.01" min="0" value="${_formDividirManual() ? esc(f.dividir) : (_formValor() ? _formDividirAuto().toFixed(2) : '')}" oninput="_form.dividirManual=true;lerForm();_formAtualizarQuota()"></label>
+            <input id="f-dividir" type="text" inputmode="decimal" autocomplete="off" value="${_formDividirManual() ? esc(f.dividir) : (_formValor() ? numTxt(_formDividirAuto()) : '')}" oninput="_form.dividirManual=true;lerForm();_formAtualizarQuota()"></label>
         </div>
         <p class="f-quota" id="f-quota">${_formQuotaTexto(n)}</p>
       </div>
@@ -821,12 +829,12 @@ function folhaForm() {
         </div>
         ${campoV('castas', 'Castas <small>(separadas por vírgulas)</small>')}
         <div class="grelha2">
-          ${campoV('preco_medio', 'Preço mercado', 'number', 'step="0.01" inputmode="decimal"')}
-          ${campoV('vivino_nota', 'Nota Vivino', 'number', 'step="0.1" min="1" max="5" inputmode="decimal"')}
+          ${campoV('preco_medio', 'Preço mercado', 'text', 'inputmode="decimal" autocomplete="off"')}
+          ${campoV('vivino_nota', 'Nota Vivino', 'text', 'inputmode="decimal" autocomplete="off"')}
         </div>
         ${campoV('loja', 'Comprado em', 'text', 'placeholder="loja, site…"')}
         <details class="mais"${v.notas_prova || v.resumo || v.teor ? ' open' : ''}><summary>Mais sobre o vinho</summary>
-          <div class="grelha2">${campoV('teor', 'Álcool (%)', 'number', 'step="0.1"')}${campoV('estagio', 'Estágio')}</div>
+          <div class="grelha2">${campoV('teor', 'Álcool (%)', 'text', 'inputmode="decimal" autocomplete="off"')}${campoV('estagio', 'Estágio')}</div>
           ${campoV('vivino_url', 'Link Vivino', 'url')}
           ${campoV('imagem_url', 'Link da fotografia', 'url')}
           <label class="campo"><span>Notas de prova</span><textarea id="fv-notas_prova" rows="2">${esc(v.notas_prova || '')}</textarea></label>
@@ -901,7 +909,7 @@ function _formAtualizarQuota() {
     // cursor a cada tecla.
     // "A dividir" segue o preço (até ao limite) enquanto ninguém lhe mexer.
     const dv = document.getElementById('f-dividir');
-    if (dv && !_formDividirManual() && document.activeElement !== dv) dv.value = _formValor() ? _formDividirAuto().toFixed(2) : '';
+    if (dv && !_formDividirManual() && document.activeElement !== dv) dv.value = _formValor() ? numTxt(_formDividirAuto()) : '';
     const temPagos = !!document.getElementById('btn-guardar') && !!document.querySelector('.pago-atalhos');
     if (!!_formDividir() !== temPagos) {
         redesenharFolha();
@@ -929,7 +937,7 @@ async function guardarEvento() {
     const f = _form;
     if (!f.aniversariante || !f.responsavel) { toast('Falta quem faz anos ou quem compra', false); return; }
     if (!f.data) { toast('Falta a data', false); return; }
-    const valor = f.valor === '' ? null : parseFloat(String(f.valor).replace(',', '.'));
+    const valor = String(f.valor).trim() === '' ? null : lerNum(f.valor);
     if (valor !== null && !(valor >= 0)) { toast('Preço inválido', false); return; }
     if (_formPrecoObrigatorio() && !(valor > 0)) { toast('Falta o preço da garrafa', false); document.getElementById('f-valor')?.focus(); return; }
     const dividir = valor > 0 ? Math.round(_formDividir() * 100) / 100 : null;
@@ -1154,7 +1162,7 @@ async function renderDefinicoes() {
 
           <h2 class="sec">Limite por prenda</h2>
           <p class="sec-nota">O que se divide no máximo. Quem gastar mais fica com o excedente (a app propõe; quem regista pode mudar).</p>
-          <div class="cartao linha-form"><input type="number" inputmode="decimal" step="0.01" min="0" id="cfg-limite" placeholder="sem limite" value="${limitePrenda() || ''}"><button class="btn prim" onclick="guardarConfig('limite_prenda', Number(document.getElementById('cfg-limite').value) || 0)">Guardar</button></div>
+          <div class="cartao linha-form"><input type="text" inputmode="decimal" autocomplete="off" id="cfg-limite" placeholder="sem limite" value="${numTxt(limitePrenda())}"><button class="btn prim" onclick="guardarConfig('limite_prenda', lerNum(document.getElementById('cfg-limite').value) || 0)">Guardar</button></div>
 
           <h2 class="sec">Desde quando</h2>
           <p class="sec-nota">A partir desta data a app propõe registar as prendas dos aniversários que já passaram.</p>
