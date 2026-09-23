@@ -640,6 +640,7 @@ function folhaEvento(id) {
 
     // O vinho
     html += v.nome ? vinhoFicha(v) : `<div class="cartao vazio-vinho">🍷 Garrafa ainda por escolher${gerir ? ' — <a href="#" onclick="editarEvento(' + ev.id + ');return false">escolher</a>' : ''}.</div>`;
+    if (gerir && v.nome) html += `<button class="btn ghost largo" id="btn-cat-${ev.id}" onclick="atualizarDoCatalogo(${ev.id})">🔄 Atualizar do catálogo</button>`;
 
     // A divisão
     html += `<h4 class="f-sec">Divisão</h4>`;
@@ -1097,6 +1098,91 @@ async function pesquisarVinhoInternet() {
         _procuraRelatorio = `<div class="relatorio erro">🌐 ${esc(e.name === 'AbortError' ? 'A pesquisa demorou demasiado — tenta outra vez.' : e.message)}</div>`;
     }
     redesenharFolha();
+}
+
+/* ── O VINHO: atualizar do catálogo ─────────────────────────────────────
+   A ficha da prenda é uma CÓPIA tirada no "Procurar informação" — o que se
+   muda depois no catálogo (uma imagem nova, uma nota) não chega cá sozinho.
+   Isto é o caminho de volta, e é à mão de propósito: mostra só o que o
+   catálogo tem DE DIFERENTE (a própria `winecatalog.comparar` faz a
+   comparação, com a ficha da prenda como "a minha") e quem gere a prenda
+   escolhe o que trazer. Nada muda sem confirmar — a mesma regra do
+   "Procurar": quem tem a garrafa na mão pode saber melhor. */
+let _cat = null;
+async function atualizarDoCatalogo(id) {
+    const ev = eventoPorId(id);
+    if (!ev) return;
+    const v = ev.vinho || {};
+    // A ficha da prenda, com os nomes de campo do catálogo.
+    const minha = {};
+    Object.entries(MAPA_CATALOGO).forEach(([kc, km]) => { if (v[km] != null && v[km] !== '') minha[kc] = v[km]; });
+    const btn = document.getElementById('btn-cat-' + id);
+    if (btn) { btn.disabled = true; btn.textContent = '📚 A comparar com o catálogo…'; }
+    try {
+        const r = await rpc('comparar', { p_nome: v.nome, p_produtor: v.produtor || '', p_ano: v.ano || null, p_ficha: minha }, 'winecatalog');
+        if (!r || !r.encontrado) { toast('O catálogo não conhece este vinho', false); return; }
+        const linhas = (r.campos || [])
+            .filter(c => MAPA_CATALOGO[c.campo] && c.catalogo != null && c.catalogo !== '')
+            .map(c => ({ k: MAPA_CATALOGO[c.campo], atual: v[MAPA_CATALOGO[c.campo]], novo: c.catalogo, sel: true }));
+        if (!linhas.length) { toast('✓ A prenda já está igual ao catálogo'); return; }
+        _cat = { id, catId: r.id, colheita: r.mesmaColheita === false ? r.ano : null, linhas };
+        abrirFolha(folhaCatalogo);
+    } catch (e) {
+        toast('⚠️ ' + e.message, false);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar do catálogo'; }
+    }
+}
+function _catValor(k, x) {
+    if (x == null || x === '' || (Array.isArray(x) && !x.length)) return '<i class="cat-vazio">vazio</i>';
+    if (k === 'imagem_url') return `<img class="cat-img" src="${esc(x)}" alt="" onerror="this.replaceWith(document.createTextNode('(imagem não abre)'))">`;
+    if (k === 'vivino_url') return `<a href="${esc(x)}" target="_blank" rel="noopener">link</a>`;
+    if (k === 'preco_medio') return eur(x);
+    if (Array.isArray(x)) return esc(x.join(', '));
+    const t = String(x);
+    return esc(t.length > 140 ? t.slice(0, 140) + '…' : t);
+}
+function folhaCatalogo() {
+    const c = _cat;
+    const n = c.linhas.filter(l => l.sel).length;
+    return `
+      <h3 class="f-tit">Atualizar do catálogo</h3>
+      <p class="f-texto">O catálogo tem ${c.linhas.length} campo${c.linhas.length === 1 ? '' : 's'} diferente${c.linhas.length === 1 ? '' : 's'} desta prenda. Escolhe o que trazer.${c.colheita ? ` <small>(o catálogo tem a colheita ${c.colheita} — os dados da garrafa servem, a nota pode não servir)</small>` : ''}</p>
+      <div class="lista">${c.linhas.map((l, i) => `
+        <button class="cartao cat-linha${l.sel ? ' on' : ''}" onclick="_cat.linhas[${i}].sel=!_cat.linhas[${i}].sel;redesenharFolha()">
+          <span class="cat-check">${l.sel ? '✓' : ''}</span>
+          <span class="cat-txt"><b>${esc(ROTULOS[l.k] || l.k)}</b>
+            <span class="cat-par"><span class="cat-lado"><small>agora</small>${_catValor(l.k, l.atual)}</span><span class="cat-seta">→</span><span class="cat-lado"><small>catálogo</small>${_catValor(l.k, l.novo)}</span></span>
+          </span>
+        </button>`).join('')}</div>
+      <div class="f-acoes">
+        <button class="btn ghost" onclick="fecharFolha()">Cancelar</button>
+        <button class="btn prim" id="btn-cat-aplicar" onclick="aplicarDoCatalogo()"${n ? '' : ' disabled'}>Trazer ${n}</button>
+      </div>`;
+}
+async function aplicarDoCatalogo() {
+    const c = _cat, ev = eventoPorId(c && c.id);
+    if (!ev) return;
+    const vinho = JSON.parse(JSON.stringify(ev.vinho || {}));
+    c.linhas.filter(l => l.sel).forEach(l => { vinho[l.k] = l.novo; });
+    vinho.catalogo_id = c.catId;
+    const btn = document.getElementById('btn-cat-aplicar');
+    btn.disabled = true; btn.textContent = 'A guardar…';
+    try {
+        await rpc('guardar_evento', {
+            p_id: ev.id, p_aniversariante: ev.aniversariante, p_data: ev.data, p_responsavel: ev.responsavel,
+            p_participantes: ev.participantes, p_estado: ev.estado, p_valor: ev.valor, p_vinho: vinho, p_notas: ev.notas,
+            p_valor_dividir: ev.valor_dividir
+        });
+        await carregarDados();
+        _cat = null;
+        fecharFolha();
+        renderTudo();
+        toast('✓ Ficha atualizada');
+    } catch (e) {
+        toast('⚠️ ' + e.message, false);
+        btn.disabled = false; btn.textContent = 'Trazer';
+    }
 }
 
 /* ── PAGAMENTOS ─────────────────────────────────────────────────────────

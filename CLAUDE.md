@@ -96,6 +96,13 @@ catalogo_id`.
   `prendas-vinho` (pesquisa Google com grounding, síncrona, ~€0.01).
 - **Nenhum dos dois escreve por cima do que já está no formulário** — só
   preenche vazios. Quem tem a garrafa na mão sabe melhor.
+- **A ficha é uma CÓPIA, e não se atualiza sozinha.** O que muda depois no
+  catálogo (uma imagem nova, uma nota) só chega à prenda pelo botão
+  **"🔄 Atualizar do catálogo"** da ficha (quem gere a prenda): a
+  `winecatalog.comparar` recebe a ficha da prenda como "a minha" e devolve
+  só o que difere; mostra-se "agora → catálogo" campo a campo e grava-se o
+  que for escolhido (`aplicarDoCatalogo`, pela `guardar_evento`). À mão de
+  propósito — nada muda sem confirmar.
 - **Esta app NÃO escreve no catálogo.** O catálogo tem dono (WineCatalog) e
   regras de força por origem; uma porta de escrita nova teria de passar pela
   `juntar` e pela `forca()` de lá — decisão desse repo, não deste.

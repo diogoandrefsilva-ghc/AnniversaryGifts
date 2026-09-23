@@ -364,3 +364,17 @@ details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color
 @media (min-width: 700px) {
   .folha { bottom: 20px; border-radius: 26px; }
 }
+
+/* ── ATUALIZAR DO CATÁLOGO: uma linha por campo diferente, "agora → catálogo" ── */
+.cartao.cat-linha { width: 100%; display: flex; gap: 12px; align-items: flex-start; text-align: left; cursor: pointer; font-weight: 400; border: 2px solid transparent; }
+.cartao.cat-linha.on { border-color: var(--pri); }
+.cat-check { width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 2px solid var(--bo); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; }
+.cat-linha.on .cat-check { background: var(--pri); border-color: var(--pri); }
+.cat-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cat-par { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13.5px; }
+.cat-lado { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.cat-lado small { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; }
+.cat-seta { color: var(--mu); font-weight: 800; }
+.cat-img { width: 56px; height: 76px; object-fit: contain; border-radius: 10px; }
+.cat-txt > b { text-transform: capitalize; }
+.cat-vazio { color: var(--mu); }
