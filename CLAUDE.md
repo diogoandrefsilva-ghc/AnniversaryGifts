@@ -102,6 +102,10 @@ dos últimos 45 dias — registar o histórico não acorda ninguém), `lembrete`
 Mesmo par VAPID do SplitBill (os secrets são do projeto); a tabela de
 subscriptions é própria porque o service worker é outro.
 
+## 29 de fevereiro
+Nos anos comuns o aniversário conta a **1 de março** (`dataAnos`), não a 28 —
+é quando o João Paulo festeja. Na ordem do ciclo continua a valer 29/fev.
+
 ## Eventos passados
 `config.inicio` (Definições › admin) diz desde quando o grupo faz isto. A
 app lista em **Início › Por registar** cada aniversário desde essa data sem

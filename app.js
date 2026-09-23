@@ -296,9 +296,12 @@ function recebeDe(nome) { // para quem é que `nome` compra
     return c[(i + 1) % c.length].nome;
 }
 function bissexto(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+// Quem nasceu a 29 de fevereiro festeja a 1 de MARÇO nos anos comuns (é o
+// que o João Paulo faz) — e não a 28. A posição no ciclo não muda: continua
+// a ordenar-se como 29/fev, entre quem faz anos em fevereiro e em março.
 function dataAnos(a, ano) {
-    const d = (a.mes === 2 && a.dia === 29 && !bissexto(ano)) ? 28 : a.dia;
-    return isoDe(ano, a.mes, d);
+    if (a.mes === 2 && a.dia === 29 && !bissexto(ano)) return isoDe(ano, 3, 1);
+    return isoDe(ano, a.mes, a.dia);
 }
 // Desde quando o grupo faz isto (Definições › admin). Sem data escolhida,
 // um ano para trás — chega para apanhar "isto já começou há uns meses".
