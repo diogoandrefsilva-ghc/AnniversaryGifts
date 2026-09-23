@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 <!-- Splash: tapa o HTML cru enquanto a sessão carrega -->
@@ -96,12 +96,15 @@ setTimeout(function(){ if (window.pgEsconderSplash) window.pgEsconderSplash(); }
 <!-- Folha (bottom sheet) genérica: a prenda, os formulários, os diálogos -->
 <div class="folha-fundo" id="folha-fundo" onclick="fecharFolha()"></div>
 <div class="folha" id="folha" role="dialog" aria-modal="true">
-  <div class="folha-pega"></div>
+  <div class="folha-topo">
+    <div class="folha-pega"></div>
+    <button class="folha-x" onclick="fecharFolha()" aria-label="Fechar">✕</button>
+  </div>
   <div class="folha-corpo" id="folha-corpo"></div>
 </div>
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

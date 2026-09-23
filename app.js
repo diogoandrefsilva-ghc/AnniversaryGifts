@@ -385,19 +385,33 @@ function resumoPagamentos(ev) {
     const pagos = ds.filter(d => d.saldo <= 0.004).length;
     return { pagos, total: ds.length, falta: ds.reduce((s, d) => s + Math.max(0, d.saldo), 0) };
 }
+/* A fotografia da garrafa. As das lojas vêm quase sempre em fundo BRANCO,
+   e dentro da caixa lilás ficavam duas bandas brancas em cima e em baixo.
+   `mix-blend-mode: multiply` (ver `.foto img`) funde o branco com o fundo
+   da caixa — a garrafa fica, o rectângulo desaparece. */
+function fotoVinho(v, cls) {
+    return `<span class="foto ${cls}">${v && v.imagem_url
+        ? `<img src="${esc(v.imagem_url)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('sem');this.remove()">`
+        : ''}</span>`;
+}
 function cartaoPrenda(ev) {
     const v = ev.vinho || {};
     const r = resumoPagamentos(ev);
-    const prog = r ? `<span class="cp-prog${r.pagos === r.total ? ' ok' : ''}">${r.pagos}/${r.total} pagos</span>` : '';
+    const detalhe = [v.produtor, v.tipo, v.regiao].filter(Boolean).map(esc).join(' · ');
+    const tags = [];
+    if (v.vivino_nota) tags.push(`<span class="cp-tag">★ ${Number(v.vivino_nota).toFixed(1)}</span>`);
+    if (ev.valor) tags.push(`<span class="cp-tag">${eur(ev.valor)}</span>`);
+    if (r) tags.push(`<span class="cp-tag ${r.pagos === r.total ? 'ok' : 'espera'}">${r.pagos}/${r.total} pagos</span>`);
     return `
       <button class="cartao cp" onclick="abrirEvento(${ev.id})">
-        ${v.imagem_url ? `<img class="cp-img" src="${esc(v.imagem_url)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="cp-img cp-ph" aria-hidden="true">🍷</span>`}
+        ${fotoVinho(v, 'cp-foto' + (v.imagem_url ? '' : ' sem'))}
         <span class="cp-txt">
           <span class="cp-l1"><b>🎂 ${esc(ev.aniversariante)}</b><span class="cp-data">${fmtData(ev.data)}</span></span>
           <span class="cp-l2">${v.nome ? esc(nomeVinho(v)) : '<i>garrafa por escolher</i>'}</span>
-          <span class="cp-l3">por ${esc(ev.responsavel)}${ev.valor ? ' · ' + eur(ev.valor) : ''} ${prog}</span>
+          ${detalhe ? `<span class="cp-l3">${detalhe}</span>` : ''}
+          <span class="cp-l3">comprada pelo ${esc(ev.responsavel)}</span>
+          <span class="cp-tags">${estadoPill(ev)}${tags.join('')}</span>
         </span>
-        ${estadoPill(ev)}
       </button>`;
 }
 function vazio(txt) { return `<div class="vazio">${txt}</div>`; }
@@ -484,7 +498,7 @@ function cartaoUltimaRecebida() {
     const v = ev.vinho || {};
     return `<button class="hc recebi" onclick="abrirEvento(${ev.id})">
         <span class="hc-rot">Última que recebeste</span>
-        ${v.imagem_url ? `<img class="hc-img" src="${esc(v.imagem_url)}" alt="" onerror="this.remove()">` : ''}
+        ${v.imagem_url ? fotoVinho(v, 'hc-img') : ''}
         <span class="hc-med">${v.nome ? esc(nomeVinho(v)) : '🍷 Garrafa sem nome'}</span>
         <span class="hc-txt">do ${esc(ev.responsavel)} · ${fmtData(ev.data)}</span>
       </button>`;
@@ -683,7 +697,7 @@ function vinhoFicha(v) {
     return `
       <div class="cartao vinho">
         <div class="vn-topo">
-          ${v.imagem_url ? `<img class="vn-img" src="${esc(v.imagem_url)}" alt="" onerror="this.remove()">` : `<span class="vn-img vn-ph" aria-hidden="true">🍷</span>`}
+          ${fotoVinho(v, 'vn-img' + (v.imagem_url ? '' : ' sem'))}
           <div><div class="vn-nome">${esc(nomeVinho(v))}</div><div class="vn-l2">${linha2}</div></div>
         </div>
         ${factos.length ? `<dl class="vn-factos">${factos.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl>` : ''}
