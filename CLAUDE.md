@@ -123,6 +123,27 @@ catalogo_id`.
   o Gemini = linha nova em `ia_uso.funcoes`**, senão o custo sai errado. **Se mexeres na
   escolha de modelo aqui, vai ver as outras no mesmo dia.**
 
+## A garrafa é SURPRESA para quem faz anos
+- **Estados: só `comprado` e `entregue`.** "Por comprar" saiu a pedido do
+  dono: a prenda regista-se quando a garrafa já foi comprada, e "comprada"
+  já chega para quem comprou receber as partes. Data no passado → nasce
+  "Entregue"; hoje ou à frente → "Comprada".
+- **Quem faz anos NÃO vê a garrafa até ela passar a `entregue`** — nem o
+  nome, nem a foto, nem a ficha, nem as notas. As dívidas vê (são públicas).
+  Isto é do SERVIDOR, não da UI: `authenticated` já não tem SELECT na
+  `eventos`; lê-se a view **`eventos_v`** (corre como o dono, portão
+  `is_allowed()`), que devolve `vinho = {}`, `notas = NULL` e
+  `vinho_oculto = true` a quem faz anos numa prenda por entregar. A
+  `dividas` passou também a `security_invoker = false` pela mesma razão.
+  A app só mostra "🎁 Surpresa" onde vê `vinho_oculto`.
+- **Nem o admin mexe na própria prenda antes de a receber**
+  (`guardar_evento` recusa registar e alterar): a app recebe a ficha vazia,
+  e gravar por cima apagava a garrafa. `podeGerirEvento`/
+  `podeRegistarAniversario` escondem os botões pelo mesmo motivo.
+- Sítio novo que leia prendas = lê a `eventos_v`, nunca a `eventos`. As
+  Edge Functions leem a tabela com a service role e **não podem pôr o vinho
+  num aviso** que chegue a quem faz anos.
+
 ## O ecrã inicial: quatro cartões grandes
 Próximo aniversário (e quem compra) · a próxima prenda que EU compro · a
 última que recebi · a minha conta (a pagar / a receber). Por baixo só o que

@@ -245,7 +245,7 @@ let _carregadoEm = 0;
 async function carregarDados() {
     const [am, ev, pg, dv, cf] = await Promise.all([
         sbGet('amigos?select=*&order=nome'),
-        sbGet('eventos?select=*&order=data.desc'),
+        sbGet('eventos_v?select=*&order=data.desc'),
         sbGet('pagamentos?select=*&order=criado_em.desc'),
         sbGet('dividas?select=*'),
         sbGet('config?select=chave,valor')
@@ -339,8 +339,10 @@ function proximosAniversarios() { const h = hoje(); return aniversarios().filter
 function aniversariosPorRegistar() { const h = hoje(); return aniversarios().filter(x => x.data <= h && !x.evento); }
 
 /* ── PERMISSÕES (a UI só decide que botões mostrar; o servidor confirma) ── */
-function podeGerirEvento(ev) { return AC.admin || (!!AC.eu && ev.responsavel === AC.eu); }
-function podeRegistarAniversario(nome) { return AC.admin || (!!AC.eu && responsavelPor(nome) === AC.eu); }
+// A garrafa é SURPRESA para quem faz anos até ser entregue (eventos_v manda-a
+// vazia, `vinho_oculto`): nem o admin gere nem regista a sua própria.
+function podeGerirEvento(ev) { return !ev.vinho_oculto && (AC.admin || (!!AC.eu && ev.responsavel === AC.eu)); }
+function podeRegistarAniversario(nome) { return nome !== AC.eu && (AC.admin || (!!AC.eu && responsavelPor(nome) === AC.eu)); }
 
 /* ── NAVEGAÇÃO ──────────────────────────────────────────────────────────── */
 let _pagina = 'inicio';
@@ -376,7 +378,8 @@ function nomeVinho(v) {
     if (!v || !v.nome) return '';
     return v.nome + (v.ano ? ' ' + v.ano : '');
 }
-const ESTADOS = { por_comprar: 'Por comprar', comprado: 'Comprada', entregue: 'Entregue' };
+const ESTADOS = { comprado: 'Comprada', entregue: 'Entregue' };
+const SURPRESA = '🎁 Surpresa — a garrafa aparece quando for entregue';
 function estadoPill(ev) {
     return `<span class="pill est-${ev.estado}">${ESTADOS[ev.estado] || ev.estado}</span>`;
 }
@@ -398,6 +401,7 @@ function fotoVinho(v, cls) {
 }
 function cartaoPrenda(ev) {
     const v = ev.vinho || {};
+    const oculto = !!ev.vinho_oculto;
     const r = resumoPagamentos(ev);
     const detalhe = [v.produtor, v.tipo, v.regiao].filter(Boolean).map(esc).join(' · ');
     const tags = [];
@@ -406,10 +410,10 @@ function cartaoPrenda(ev) {
     if (r) tags.push(`<span class="cp-tag ${r.pagos === r.total ? 'ok' : 'espera'}">${r.pagos}/${r.total} pagos</span>`);
     return `
       <button class="cartao cp" onclick="abrirEvento(${ev.id})">
-        ${fotoVinho(v, 'cp-foto' + (v.imagem_url ? '' : ' sem'))}
+        ${oculto ? '<span class="foto cp-foto surpresa" aria-hidden="true">🎁</span>' : fotoVinho(v, 'cp-foto' + (v.imagem_url ? '' : ' sem'))}
         <span class="cp-txt">
           <span class="cp-l1"><b>🎂 ${esc(ev.aniversariante)}</b><span class="cp-data">${fmtData(ev.data)}</span></span>
-          <span class="cp-l2">${v.nome ? esc(nomeVinho(v)) : '<i>garrafa por escolher</i>'}</span>
+          <span class="cp-l2">${oculto ? '<i>🎁 Surpresa — só a vês quando a receberes</i>' : v.nome ? esc(nomeVinho(v)) : '<i>garrafa por escolher</i>'}</span>
           ${detalhe ? `<span class="cp-l3">${detalhe}</span>` : ''}
           <span class="cp-l3">comprada pelo ${esc(ev.responsavel)}</span>
           <span class="cp-tags">${ev.estado === 'entregue' ? '' : estadoPill(ev)}${tags.join('')}</span>
@@ -486,7 +490,7 @@ function cartaoMinhaCompra(prox) {
     const x = prox.find(p => (p.evento ? p.evento.responsavel : responsavelPor(p.nome)) === AC.eu && !(p.evento && p.evento.estado === 'entregue'));
     if (!x) return `<div class="hc compra calma"><span class="hc-rot">A tua próxima prenda</span><span class="hc-med">Nada a comprar</span><span class="hc-txt">Não estás no ciclo, ou já está tudo entregue.</span></div>`;
     const n = diasEntre(hoje(), x.data);
-    const urgente = n <= 30 && (!x.evento || x.evento.estado === 'por_comprar');
+    const urgente = n <= 30 && !x.evento;
     const click = x.evento ? `abrirEvento(${x.evento.id})` : `novoEvento('${escJs(x.nome)}','${x.data}')`;
     return `<button class="hc compra${urgente ? '' : ' calma'}" onclick="${click}">
         <span class="hc-deco" aria-hidden="true">🎁</span>
@@ -499,7 +503,7 @@ function cartaoMinhaCompra(prox) {
 // 3. A última garrafa que me ofereceram.
 function cartaoUltimaRecebida() {
     if (!AC.eu) return '';
-    const ev = eventos.filter(e => e.aniversariante === AC.eu && e.data <= hoje()).sort((a, b) => b.data.localeCompare(a.data))[0];
+    const ev = eventos.filter(e => e.aniversariante === AC.eu && e.data <= hoje() && !e.vinho_oculto).sort((a, b) => b.data.localeCompare(a.data))[0];
     if (!ev) return `<div class="hc recebi"><span class="hc-rot">Última que recebeste</span><span class="hc-med">Ainda nenhuma</span><span class="hc-txt">Quando a tua prenda for registada, aparece aqui.</span></div>`;
     const v = ev.vinho || {};
     return `<button class="hc recebi" onclick="abrirEvento(${ev.id})">
@@ -638,14 +642,14 @@ function folhaEvento(id) {
         ${estadoPill(ev)}
       </div>`;
 
-    // O vinho
-    html += v.nome ? vinhoFicha(v) : `<div class="cartao vazio-vinho">🍷 Garrafa ainda por escolher${gerir ? ' — <a href="#" onclick="editarEvento(' + ev.id + ');return false">escolher</a>' : ''}.</div>`;
+    // O vinho (a quem faz anos, surpresa até ser entregue)
+    html += ev.vinho_oculto ? `<div class="cartao vazio-vinho">${SURPRESA}.</div>` : v.nome ? vinhoFicha(v) : `<div class="cartao vazio-vinho">🍷 Garrafa ainda por escolher${gerir ? ' — <a href="#" onclick="editarEvento(' + ev.id + ');return false">escolher</a>' : ''}.</div>`;
     if (gerir && v.nome) html += `<button class="btn ghost largo" id="btn-cat-${ev.id}" onclick="atualizarDoCatalogo(${ev.id})">🔄 Atualizar do catálogo</button>`;
 
     // A divisão
     html += `<h4 class="f-sec">Divisão</h4>`;
     if (!ev.valor) {
-        html += `<p class="f-texto">${ev.estado === 'por_comprar' ? 'Ainda sem preço' : 'Sem preço registado — ninguém deve nada por esta prenda'}. ${n} pessoa${n === 1 ? '' : 's'} a dividir: ${ev.participantes.map(esc).join(', ')}.</p>`;
+        html += `<p class="f-texto">Sem preço registado — ninguém deve nada por esta prenda. ${n} pessoa${n === 1 ? '' : 's'} a dividir: ${ev.participantes.map(esc).join(', ')}.</p>`;
     } else {
         const div = valorADividir(ev);
         const quota = ds.length ? ds[0].quota : div;
@@ -730,7 +734,7 @@ function novoEvento(nome, data) {
         id: null, aniversariante: aniv, data: data || hoje(),
         responsavel: aniv ? (responsavelPor(aniv) || '') : (AC.eu || ''),
         participantes: amigos.filter(a => a.ativo && a.nome !== aniv).map(a => a.nome),
-        estado: (data || hoje()) < hoje() ? 'entregue' : 'por_comprar',
+        estado: (data || hoje()) < hoje() ? 'entregue' : 'comprado',
         valor: '', dividir: '', dividirManual: false, notas: '', vinho: {}, pagos: [], pagosAntes: []
     };
     abrirFolha(folhaForm);

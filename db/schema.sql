@@ -78,8 +78,8 @@ CREATE TABLE IF NOT EXISTS anniversarygifts.eventos (
   ano            integer GENERATED ALWAYS AS (extract(year FROM data)::integer) STORED,
   responsavel    text NOT NULL REFERENCES anniversarygifts.amigos(nome) ON UPDATE CASCADE,
   participantes  text[] NOT NULL DEFAULT '{}',
-  estado         text NOT NULL DEFAULT 'por_comprar'
-                   CHECK (estado IN ('por_comprar', 'comprado', 'entregue')),
+  estado         text NOT NULL DEFAULT 'comprado'
+                   CHECK (estado IN ('comprado', 'entregue')),
   valor          numeric(10,2) CHECK (valor IS NULL OR valor >= 0),
   vinho          jsonb NOT NULL DEFAULT '{}'::jsonb,
   notas          text,
@@ -179,9 +179,10 @@ $$;
 -- cada um sai SÓ desta view — a app e a Edge Function das notificações
 -- leem-na, nenhuma recalcula. Quem compra não aparece (não deve nada a si
 -- próprio) e absorve o cêntimo que sobrar do arredondamento.
--- `security_invoker`: a view respeita a RLS de quem pergunta.
+-- `security_invoker = false`: corre como o dono, porque quem tem login já
+-- não lê a `eventos` direto (ver eventos_v); o portão é o is_allowed().
 -- =====================================================================
-CREATE OR REPLACE VIEW anniversarygifts.dividas WITH (security_invoker = true) AS
+CREATE OR REPLACE VIEW anniversarygifts.dividas WITH (security_invoker = false) AS
 SELECT e.id AS evento_id,
        p.devedor,
        e.responsavel AS credor,
@@ -196,6 +197,7 @@ SELECT e.id AS evento_id,
          ON pg.evento_id = e.id AND pg.devedor = p.devedor
  WHERE coalesce(e.valor_dividir, e.valor) > 0
    AND p.devedor <> e.responsavel
+   AND anniversarygifts.is_allowed()
  GROUP BY e.id, p.devedor, e.responsavel, e.valor, e.valor_dividir, e.participantes;
 
 -- =====================================================================
@@ -258,10 +260,15 @@ BEGIN
     IF NOT coalesce(v_admin OR v_eu = p_responsavel, false) THEN
       RAISE EXCEPTION 'Só quem compra a prenda (ou o admin) a pode registar.';
     END IF;
+    -- A garrafa é SURPRESA para quem faz anos (ver eventos_v): nem o admin
+    -- regista a sua própria — veria o que lhe vão dar.
+    IF v_eu = p_aniversariante THEN
+      RAISE EXCEPTION 'A tua própria prenda regista-a quem ta compra — é surpresa.';
+    END IF;
     BEGIN
       INSERT INTO anniversarygifts.eventos
         (aniversariante, data, responsavel, participantes, estado, valor, valor_dividir, vinho, notas, criado_por, atualizado_por)
-      VALUES (p_aniversariante, p_data, p_responsavel, v_part, coalesce(p_estado, 'por_comprar'),
+      VALUES (p_aniversariante, p_data, p_responsavel, v_part, coalesce(p_estado, 'comprado'),
               p_valor, v_div, coalesce(p_vinho, '{}'::jsonb), nullif(btrim(coalesce(p_notas, '')), ''),
               anniversarygifts.meu_email(), anniversarygifts.meu_email())
       RETURNING * INTO r;
@@ -279,6 +286,11 @@ BEGIN
   IF NOT v_admin AND (p_aniversariante IS DISTINCT FROM r.aniversariante
                       OR p_responsavel IS DISTINCT FROM r.responsavel) THEN
     RAISE EXCEPTION 'Só o admin muda quem faz anos ou quem compra.';
+  END IF;
+  -- Quem faz anos não mexe na prenda antes de a receber: a app mostra-lhe a
+  -- ficha VAZIA (eventos_v), e gravar por cima apagava a garrafa.
+  IF v_eu = r.aniversariante AND r.estado <> 'entregue' THEN
+    RAISE EXCEPTION 'Esta prenda é tua — só lhe podes mexer depois de a receberes.';
   END IF;
   v_antes := coalesce(r.valor_dividir, r.valor);
 
@@ -478,7 +490,8 @@ $$;
 -- GRANTS — tabela a tabela (nada de GRANT ALL ON ALL TABLES).
 -- =====================================================================
 REVOKE ALL ON ALL TABLES IN SCHEMA anniversarygifts FROM anon;
-GRANT SELECT ON anniversarygifts.config, anniversarygifts.amigos, anniversarygifts.eventos,
+-- eventos NÃO: lê-se pela eventos_v (a surpresa, no fim do ficheiro).
+GRANT SELECT ON anniversarygifts.config, anniversarygifts.amigos,
                 anniversarygifts.pagamentos, anniversarygifts.dividas TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON anniversarygifts.config, anniversarygifts.amigos TO authenticated;
 GRANT SELECT, INSERT, DELETE ON anniversarygifts.access_requests TO authenticated;
@@ -534,3 +547,43 @@ CREATE POLICY push_propria ON anniversarygifts.push_subscriptions
 -- Confirmação (correr à parte): nenhuma função deste schema executável por anon.
 --   SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 --    WHERE n.nspname = 'anniversarygifts' AND has_function_privilege('anon', p.oid, 'execute');
+
+-- =====================================================================
+-- A GARRAFA É SURPRESA
+-- Quem faz anos não pode ver QUAL é a garrafa enquanto a prenda não estiver
+-- "entregue" (as dívidas pode ver: o que custou não estraga a surpresa).
+-- Esconder no ecrã não chegava — a tabela lia-se por REST e o `vinho` vinha
+-- inteiro. Por isso:
+--   · `eventos` deixa de ser legível por quem tem login;
+--   · quem lê é a vista `eventos_v`, que corre como o dono e, para o próprio
+--     aniversariante de uma prenda ainda não entregue, devolve o `vinho`
+--     vazio e as `notas` a NULL (as notas podem dizer o vinho), com
+--     `vinho_oculto = true` para a app saber mostrar "🎁 Surpresa";
+--   · a `dividas` passou a `security_invoker = false` pela mesma razão (lê a
+--     `eventos`), com o `is_allowed()` lá dentro;
+--   · a `guardar_evento` recusa que quem faz anos registe ou mexa na sua
+--     própria prenda antes de a receber (nem o admin).
+-- O estado "por comprar" saiu (a pedido do dono): a prenda regista-se quando
+-- a garrafa já foi comprada — "comprado" já serve para receber as partes.
+-- =====================================================================
+UPDATE anniversarygifts.eventos SET estado = 'comprado' WHERE estado = 'por_comprar';
+ALTER TABLE anniversarygifts.eventos ALTER COLUMN estado SET DEFAULT 'comprado';
+ALTER TABLE anniversarygifts.eventos DROP CONSTRAINT IF EXISTS eventos_estado_check;
+ALTER TABLE anniversarygifts.eventos ADD CONSTRAINT eventos_estado_check CHECK (estado IN ('comprado', 'entregue'));
+
+CREATE OR REPLACE VIEW anniversarygifts.eventos_v WITH (security_invoker = false) AS
+SELECT e.id, e.aniversariante, e.data, e.ano, e.responsavel, e.participantes, e.estado,
+       e.valor, e.valor_dividir,
+       CASE WHEN o.oculto THEN '{}'::jsonb ELSE e.vinho END AS vinho,
+       CASE WHEN o.oculto THEN NULL ELSE e.notas END AS notas,
+       o.oculto AS vinho_oculto,
+       e.criado_por, e.criado_em, e.atualizado_por, e.atualizado_em
+  FROM anniversarygifts.eventos e
+ CROSS JOIN LATERAL (SELECT coalesce(e.estado <> 'entregue'
+                                      AND e.aniversariante = anniversarygifts.eu(), false) AS oculto) o
+ WHERE anniversarygifts.is_allowed();
+
+REVOKE SELECT ON anniversarygifts.eventos FROM authenticated, anon;
+REVOKE ALL ON anniversarygifts.eventos_v FROM PUBLIC, anon;
+GRANT SELECT ON anniversarygifts.eventos_v, anniversarygifts.dividas TO authenticated;
+
