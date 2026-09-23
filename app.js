@@ -412,7 +412,7 @@ function cartaoPrenda(ev) {
           <span class="cp-l2">${v.nome ? esc(nomeVinho(v)) : '<i>garrafa por escolher</i>'}</span>
           ${detalhe ? `<span class="cp-l3">${detalhe}</span>` : ''}
           <span class="cp-l3">comprada pelo ${esc(ev.responsavel)}</span>
-          <span class="cp-tags">${estadoPill(ev)}${tags.join('')}</span>
+          <span class="cp-tags">${ev.estado === 'entregue' ? '' : estadoPill(ev)}${tags.join('')}</span>
         </span>
       </button>`;
 }
