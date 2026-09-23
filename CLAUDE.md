@@ -189,10 +189,9 @@ subscriptions é própria porque o service worker é outro.
 **Insistir com quem não as tem** (pedido do dono), em dois níveis:
 - um **aviso fixo no topo do Início** enquanto não estiverem ativas NESTE
   dispositivo (`pushAvisoHTML`) — texto curto, porque fica lá sempre;
-- uma **folha ao entrar** (`pushConvidar` → `folhaPush`), **no máximo de 3 em
-  3 dias** (`pg_push_adiado` no localStorage, marcado quando se MOSTRA —
-  fechar no ✕ também é "agora não"). Mais do que isso e o "Agora não" deixava
-  de querer dizer alguma coisa.
+- uma **folha de cada vez que se abre a app** (`pushConvidar` → `folhaPush`).
+  "Agora não" vale só até à próxima entrada — é de propósito, o dono quer
+  insistir. Já esteve limitada a 3 em 3 dias; não voltar a pôr sem ele pedir.
 Três casos (`_pushEstado`): `pedir` (tem botão Ativar — o
 `requestPermission` precisa do toque); `negado` (o browser já não deixa a app
 perguntar: só se explica onde se liga); `instalar` (iPhone no Safari: sem a

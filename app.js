@@ -1421,14 +1421,13 @@ async function pushDesativar() {
     pushRenderStatus();
 }
 /* Insistir com quem não as tem (pedido do dono): um AVISO fixo no Início
-   enquanto não estiverem ativas neste dispositivo, e uma FOLHA ao entrar —
-   esta no máximo de 3 em 3 dias, senão "Agora não" não queria dizer nada.
+   enquanto não estiverem ativas neste dispositivo, e uma FOLHA de cada vez
+   que se abre a app — "Agora não" vale só até à próxima (o dono quis assim).
    Estados (`_pushEstado`): 'ativo' · 'pedir' (nunca respondeu) · 'negado'
    (recusou no browser — a app já não pode perguntar, só explicar onde se
    liga) · 'instalar' (iPhone no Safari: sem estar no ecrã principal não há
    push nenhum) · null (sem suporte e nada a fazer). */
 let _pushEstado = null;
-const PUSH_ADIAR_MS = 3 * 24 * 3600 * 1000;
 function _ehIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
 function _ehInstalada() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
 async function pushCalcularEstado() {
@@ -1470,18 +1469,13 @@ async function pushConvidar() {
     await pushCalcularEstado();
     renderInicio();
     if (!PUSH_TXT[_pushEstado]) return;
-    let adiado = 0;
-    try { adiado = +localStorage.getItem('pg_push_adiado') || 0; } catch (e) {}
-    if (Date.now() - adiado < PUSH_ADIAR_MS) return;
     if (document.getElementById('folha').classList.contains('on')) return;
-    // Conta como mostrada logo aqui: fechar no ✕ ou no fundo também é "agora não".
-    try { localStorage.setItem('pg_push_adiado', String(Date.now())); } catch (e) {}
     abrirFolha(folhaPush);
 }
 async function pushAtivarDaqui() {
     await pushAtivar();
     await pushCalcularEstado();
-    if (_pushEstado === 'ativo') { try { localStorage.removeItem('pg_push_adiado'); } catch (e) {} fecharFolha(); }
+    if (_pushEstado === 'ativo') fecharFolha();
     else if (_pushEstado === 'negado') redesenharFolha();
     renderInicio();
 }
