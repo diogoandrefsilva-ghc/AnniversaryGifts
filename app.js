@@ -334,7 +334,9 @@ function aniversarios() {
     return out.sort((x, y) => x.data.localeCompare(y.data));
 }
 function proximosAniversarios() { const h = hoje(); return aniversarios().filter(x => x.data >= h); }
-function aniversariosPorRegistar() { const h = hoje(); return aniversarios().filter(x => x.data < h && !x.evento); }
+// Inclui os de HOJE: é o dia em que a garrafa se entrega, e é quando mais
+// se quer registá-la.
+function aniversariosPorRegistar() { const h = hoje(); return aniversarios().filter(x => x.data <= h && !x.evento); }
 
 /* ── PERMISSÕES (a UI só decide que botões mostrar; o servidor confirma) ── */
 function podeGerirEvento(ev) { return AC.admin || (!!AC.eu && ev.responsavel === AC.eu); }
@@ -465,13 +467,17 @@ function cartaoProximoAnos(prox) {
     if (!x) return `<div class="hc anos largo"><span class="hc-rot">Próximo aniversário</span><span class="hc-med">Sem datas marcadas</span></div>`;
     const resp = x.evento ? x.evento.responsavel : responsavelPor(x.nome);
     const n = diasEntre(hoje(), x.data);
-    const click = x.evento ? `abrirEvento(${x.evento.id})` : `irPara('ciclo')`;
+    // Sem prenda ainda: quem a pode registar (quem compra, ou o admin) vai
+    // direto ao formulário. Isto chegou a levar ao Ciclo — e a prenda dos anos
+    // de HOJE ficava sem porta nenhuma, porque "Por registar" só tinha o passado.
+    const podeReg = !x.evento && podeRegistarAniversario(x.nome);
+    const click = x.evento ? `abrirEvento(${x.evento.id})` : (podeReg ? `novoEvento('${escJs(x.nome)}','${x.data}')` : `irPara('ciclo')`);
     return `<button class="hc anos largo" onclick="${click}">
         <span class="hc-deco" aria-hidden="true">🎂</span>
         <span class="hc-rot">Próximo aniversário</span>
         <span class="hc-big">${esc(x.nome)}${x.nome === AC.eu ? ' <small style="color:inherit;opacity:.8">(tu!)</small>' : ''}</span>
         <span class="hc-txt">${fmtData(x.data, false)} · ${n === 0 ? 'é hoje! 🎉' : quandoTexto(x.data)}</span>
-        <span class="hc-pe"><span class="hc-chip">🛒 compra ${resp ? esc(resp) + (resp === AC.eu ? ' (tu)' : '') : '—'}</span>${x.evento ? `<span class="hc-chip">${ESTADOS[x.evento.estado]}</span>` : ''}</span>
+        <span class="hc-pe"><span class="hc-chip">🛒 compra ${resp ? esc(resp) + (resp === AC.eu ? ' (tu)' : '') : '—'}</span>${x.evento ? `<span class="hc-chip">${ESTADOS[x.evento.estado]}</span>` : (podeReg ? `<span class="hc-chip">Registar ›</span>` : '')}</span>
       </button>`;
 }
 // 2. A próxima garrafa que ME cabe comprar.
