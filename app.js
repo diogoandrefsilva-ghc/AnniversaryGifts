@@ -1274,9 +1274,9 @@ async function renderDefinicoes() {
     if (AC.admin) {
         html += `<h2 class="sec">Amigos</h2>
           <p class="sec-nota">Ter email aqui É o acesso à app. Sem data de anos, o amigo fica fora do ciclo.</p>
-          <div class="cartao tabela">` + amigos.map(a => `
+          <div class="cartao tabela">` + amigos.map((a, i) => `
             <button class="tb-l tb-btn" onclick="editarAmigo('${escJs(a.nome)}')">${avatar(a.nome)}
-              <span class="tb-n">${esc(a.nome)}${a.ativo ? '' : ' <small>(inativo)</small>'}<small>${a.email ? esc(a.email) : '<i>sem conta ligada</i>'}</small></span>
+              <span class="tb-n">${esc(a.nome)}${a.ativo ? '' : ' <small>(inativo)</small>'}<small>${a.email ? esc(a.email) : '<i>sem conta ligada</i>'}</small>${a.email ? `<small class="am-estado" id="ea-${i}"></small>` : ''}</span>
               <span class="tb-v">${a.dia ? a.dia + ' ' + MESES[a.mes - 1] : '<i>sem data</i>'}</span></button>`).join('') + `</div>
           <button class="btn ghost largo" onclick="editarAmigo(null)">+ Amigo</button>
 
@@ -1291,7 +1291,32 @@ async function renderDefinicoes() {
     }
     el.innerHTML = html;
     pushRenderStatus();
-    if (AC.admin) carregarPedidosAcesso();
+    if (AC.admin) { carregarPedidosAcesso(); carregarEstadoAmigos(); }
+}
+// Admin: notificações e última entrada de cada amigo (`estado_amigos`, que
+// é quem pode ler as subscriptions dos outros e o auth.users). A "última
+// entrada" é a desta app (`registar_entrada`); o login da conta só aparece
+// para quem ainda não abriu a app desde que isto existe — o projeto é
+// partilhado com as outras apps, por isso esse login pode ter sido noutra.
+async function carregarEstadoAmigos() {
+    let linhas;
+    try { linhas = await rpc('estado_amigos'); } catch (e) { return; }
+    const por = new Map((linhas || []).map(l => [l.nome, l]));
+    amigos.forEach((a, i) => {
+        const el = document.getElementById('ea-' + i), l = por.get(a.nome);
+        if (!el || !l) return;
+        const push = l.dispositivos > 0 ? `🔔 ${l.dispositivos > 1 ? l.dispositivos + ' dispositivos' : 'notificações ativas'}` : '🔕 sem notificações';
+        const quando = l.ultima_entrada ? 'entrou ' + quandoMomento(l.ultima_entrada)
+            : l.ultimo_login ? 'login ' + quandoMomento(l.ultimo_login) + ' (conta)' : 'nunca entrou';
+        el.textContent = push + ' · ' + quando;
+    });
+}
+function quandoMomento(ts) {
+    const d = new Date(ts), iso = isoDe(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    const n = diasEntre(iso, hoje());
+    if (n === 0) return `hoje às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    if (n === 1) return 'ontem';
+    return n < 30 ? `há ${n} dias` : 'a ' + fmtData(iso, iso.slice(0, 4) !== hoje().slice(0, 4));
 }
 async function carregarPedidosAcesso() {
     try { _pedidosAcesso = await sbGet('access_requests?select=*&order=requested_at.desc'); } catch (e) { _pedidosAcesso = []; }
@@ -1575,6 +1600,7 @@ async function sbAposLogin() {
     irPara('inicio');
     renderTudo();
     pushReativarSilencioso().then(pushConvidar);
+    rpc('registar_entrada').catch(() => {});   // para o painel do admin
 }
 async function sbSolicitarAcesso() {
     const btn = document.getElementById('btn-solicitar');
