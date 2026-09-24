@@ -603,7 +603,8 @@ function renderDividas() {
             porEv[id].map(d => `<div class="gr-l">${avatar(d.devedor)}<span class="gr-n">${esc(d.devedor)}${d.devedor === AC.eu ? ' (tu)' : ''}</span>
               ${d.por_confirmar > 0 ? '<span class="pill espera">⏳</span>' : ''}
               <b class="gr-v">${eur(d.saldo)}</b>
-              ${d.devedor === AC.eu && !(d.por_confirmar > 0) ? `<button class="btn mini prim" onclick="declararPagamento(${id})">Já paguei</button>` : ''}</div>`).join('') + `</div>`;
+              ${d.devedor === AC.eu && !(d.por_confirmar > 0) ? `<button class="btn mini prim" onclick="declararPagamento(${id})">Já paguei</button>` : ''}
+              ${podeGerirEvento(ev) && d.devedor !== AC.eu ? `<button class="btn mini ghost" onclick="registarRecebido(${id},'${escJs(d.devedor)}')">Recebi</button>` : ''}</div>`).join('') + `</div>`;
     }).join('');
     el.innerHTML = html;
 }
@@ -1214,7 +1215,11 @@ async function declararPagamento(eventoId) {
 }
 async function registarRecebido(eventoId, devedor) {
     const d = dividas.find(x => x.evento_id === eventoId && x.devedor === devedor);
-    const v = await pedirValor('Recebi', `Quanto é que o <b>${esc(devedor)}</b> te pagou?`, d ? d.saldo : null, 'Registar');
+    const ev = eventoPorId(eventoId);
+    if (!ev) return;
+    // A folha é também a confirmação: um toque sem querer no "Recebi" não grava nada.
+    const a = ev.responsavel === AC.eu ? 'te' : `ao ${esc(ev.responsavel)}`;
+    const v = await pedirValor('Confirmar recebimento', `Confirmas que o <b>${esc(devedor)}</b> já ${a} pagou a parte da prenda do <b>${esc(ev.aniversariante)}</b>? Fica logo registado como pago.${d && d.por_confirmar > 0 ? ' O "já paguei" que ele declarou fica substituído por este.' : ''}`, d ? d.saldo : null, 'Sim, recebi');
     if (v == null) return;
     try {
         await rpc('registar_recebido', { p_evento: eventoId, p_devedor: devedor, p_valor: v });
