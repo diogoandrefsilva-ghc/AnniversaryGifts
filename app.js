@@ -1293,11 +1293,11 @@ async function renderDefinicoes() {
     pushRenderStatus();
     if (AC.admin) { carregarPedidosAcesso(); carregarEstadoAmigos(); }
 }
-// Admin: notificações e última entrada de cada amigo (`estado_amigos`, que
-// é quem pode ler as subscriptions dos outros e o auth.users). A "última
-// entrada" é a desta app (`registar_entrada`); o login da conta só aparece
-// para quem ainda não abriu a app desde que isto existe — o projeto é
-// partilhado com as outras apps, por isso esse login pode ter sido noutra.
+// Admin: notificações sim/não e última entrada de cada amigo
+// (`estado_amigos`, que é quem pode ler as subscriptions dos outros). A
+// "última entrada" é a desta app (`registar_entrada`); o login da conta não
+// se mostra — o projeto é partilhado com as outras apps e a sessão renova-se
+// sem login novo, por isso não diria quando a pessoa usou ESTA app.
 async function carregarEstadoAmigos() {
     let linhas;
     try { linhas = await rpc('estado_amigos'); } catch (e) { return; }
@@ -1305,9 +1305,8 @@ async function carregarEstadoAmigos() {
     amigos.forEach((a, i) => {
         const el = document.getElementById('ea-' + i), l = por.get(a.nome);
         if (!el || !l) return;
-        const push = l.dispositivos > 0 ? `🔔 ${l.dispositivos > 1 ? l.dispositivos + ' dispositivos' : 'notificações ativas'}` : '🔕 sem notificações';
-        const quando = l.ultima_entrada ? 'entrou ' + quandoMomento(l.ultima_entrada)
-            : l.ultimo_login ? 'login ' + quandoMomento(l.ultimo_login) + ' (conta)' : 'nunca entrou';
+        const push = l.dispositivos > 0 ? '🔔 notificações ativas' : '🔕 sem notificações';
+        const quando = l.ultima_entrada ? 'entrou ' + quandoMomento(l.ultima_entrada) : 'ainda sem entrada registada';
         el.textContent = push + ' · ' + quando;
     });
 }

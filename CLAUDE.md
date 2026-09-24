@@ -198,13 +198,13 @@ perguntar: só se explica onde se liga); `instalar` (iPhone no Safari: sem a
 app no ecrã principal não há push nenhum). O estado é por DISPOSITIVO, não
 por conta — é a subscription que conta.
 
-**Painel do admin (Definições › Amigos):** cada amigo mostra 🔔/🔕 e a
-última entrada, pela `estado_amigos()` (só admin — é quem lê as
-subscriptions dos outros e o `auth.users`). A entrada é DESTA app: a app
-chama `registar_entrada()` sempre que abre (tabela `entradas`, sem acesso
-por REST). O `last_sign_in_at` do auth só aparece como recurso ("(conta)"),
-porque o projeto é partilhado com as outras apps e a sessão renova-se sem
-login novo.
+**Painel do admin (Definições › Amigos):** cada amigo mostra 🔔/🔕 (só
+sim/não — quantos dispositivos não interessa ao dono) e a última entrada,
+pela `estado_amigos()` (só admin — é quem lê as subscriptions dos outros).
+A entrada é DESTA app: a app chama `registar_entrada()` sempre que abre
+(tabela `entradas`, sem acesso por REST). O `last_sign_in_at` do auth NÃO
+se mostra: o projeto é partilhado com as outras apps e a sessão renova-se
+sem login novo, e o dono só quer saber quando entraram nesta.
 
 ## 29 de fevereiro
 Nos anos comuns o aniversário conta a **1 de março** (`dataAnos`), não a 28 —
