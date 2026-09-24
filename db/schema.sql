@@ -587,3 +587,51 @@ REVOKE SELECT ON anniversarygifts.eventos FROM authenticated, anon;
 REVOKE ALL ON anniversarygifts.eventos_v FROM PUBLIC, anon;
 GRANT SELECT ON anniversarygifts.eventos_v, anniversarygifts.dividas TO authenticated;
 
+
+-- =====================================================================
+-- PAINEL DO ADMIN: quem tem notificações e quando entrou pela última vez
+-- `entradas`: a app regista-se aqui cada vez que abre (registar_entrada).
+-- O `last_sign_in_at` do auth.users sozinho não servia: o projeto é o mesmo
+-- das outras apps (um login no SplitBill contava como entrada aqui) e a
+-- sessão renova-se sem login novo durante semanas. Fica só como recurso
+-- para quem ainda não abriu a app desde que isto existe.
+-- Ninguém lê a tabela por REST; só a `estado_amigos` (admin) a devolve.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS anniversarygifts.entradas (
+  email  text PRIMARY KEY,
+  ultima timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE anniversarygifts.entradas ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON anniversarygifts.entradas FROM PUBLIC, anon, authenticated;
+GRANT ALL ON anniversarygifts.entradas TO service_role;
+
+CREATE OR REPLACE FUNCTION anniversarygifts.registar_entrada() RETURNS void
+  LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = anniversarygifts, public
+AS $$
+  INSERT INTO anniversarygifts.entradas (email, ultima)
+  SELECT anniversarygifts.meu_email(), now()
+   WHERE anniversarygifts.meu_email() <> '' AND anniversarygifts.is_allowed()
+  ON CONFLICT (email) DO UPDATE SET ultima = excluded.ultima
+$$;
+
+-- Uma linha por amigo: quantos dispositivos têm push e a última entrada.
+-- `push_subscriptions` tem RLS "só as minhas", por isso é daqui que o admin
+-- a vê; e o auth.users não é legível pela app de todo.
+CREATE OR REPLACE FUNCTION anniversarygifts.estado_amigos()
+  RETURNS TABLE (nome text, dispositivos int, ultima_entrada timestamptz, ultimo_login timestamptz)
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = anniversarygifts, public
+AS $$
+BEGIN
+  IF NOT coalesce(anniversarygifts.is_admin(), false) THEN RAISE EXCEPTION 'Só o admin.'; END IF;
+  RETURN QUERY
+  SELECT a.nome,
+         (SELECT count(*)::int FROM anniversarygifts.push_subscriptions s WHERE lower(s.email) = lower(a.email)),
+         (SELECT e.ultima FROM anniversarygifts.entradas e WHERE e.email = lower(a.email)),
+         (SELECT max(u.last_sign_in_at) FROM auth.users u WHERE lower(u.email) = lower(a.email))
+    FROM anniversarygifts.amigos a
+   WHERE a.email IS NOT NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION anniversarygifts.registar_entrada(), anniversarygifts.estado_amigos() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION anniversarygifts.registar_entrada(), anniversarygifts.estado_amigos() TO authenticated, service_role;
