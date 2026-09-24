@@ -181,6 +181,9 @@ $$;
 -- próprio) e absorve o cêntimo que sobrar do arredondamento.
 -- `security_invoker = false`: corre como o dono, porque quem tem login já
 -- não lê a `eventos` direto (ver eventos_v); o portão é o is_allowed().
+-- O portão deixa passar também a service role: a `prendas-notificar` lê
+-- aqui com ela, e a service role não tem `eu()` — só com o is_allowed() a
+-- view dava-lhe zero linhas e os avisos de dívida não saíam para ninguém.
 -- =====================================================================
 CREATE OR REPLACE VIEW anniversarygifts.dividas WITH (security_invoker = false) AS
 SELECT e.id AS evento_id,
@@ -197,7 +200,7 @@ SELECT e.id AS evento_id,
          ON pg.evento_id = e.id AND pg.devedor = p.devedor
  WHERE coalesce(e.valor_dividir, e.valor) > 0
    AND p.devedor <> e.responsavel
-   AND anniversarygifts.is_allowed()
+   AND (anniversarygifts.is_allowed() OR auth.role() = 'service_role')
  GROUP BY e.id, p.devedor, e.responsavel, e.valor, e.valor_dividir, e.participantes;
 
 -- =====================================================================

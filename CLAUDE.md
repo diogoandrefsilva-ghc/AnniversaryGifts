@@ -143,6 +143,10 @@ catalogo_id`.
 - Sítio novo que leia prendas = lê a `eventos_v`, nunca a `eventos`. As
   Edge Functions leem a tabela com a service role e **não podem pôr o vinho
   num aviso** que chegue a quem faz anos.
+- **Portão `is_allowed()` numa view que uma Edge Function lê = deixar
+  passar também `auth.role() = 'service_role'`.** A service role não tem
+  `eu()`: a `dividas` chegou a devolver-lhe zero linhas e os avisos de
+  dívida e os lembretes não saíam para ninguém (200, `enviados: 0`).
 
 ## O ecrã inicial: quatro cartões grandes
 Próximo aniversário (e quem compra) · a próxima prenda que EU compro · a
