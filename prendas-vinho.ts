@@ -147,14 +147,21 @@ function fezPesquisa(gd: any): boolean {
     (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
     Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
 }
-const PROMPT_PROFUNDA = `
-
-OBRIGATÓRIO — PESQUISA A SÉRIO, NÃO DE MEMÓRIA:
-- Antes de escreveres o JSON, usa a ferramenta de pesquisa Google — pelo
-  menos o Vivino deste vinho e o preço em lojas portuguesas.
-- Um campo que a pesquisa não confirmar fica fora do JSON, MESMO que aches
-  que sabes a resposta. Esta pesquisa foi pedida precisamente porque a
-  resposta de memória não chega.`;
+/* O que faz o modelo pesquisar a sério (testado a 24/09/2026 — ver o
+   CLAUDE.md da WineCatalog, "De memória ou pesquisado"): não é pedir-lho
+   com mais força. Com "Responde SÓ com este JSON" o modelo preenche de
+   memória, com ou sem "OBRIGATÓRIO"; a deixá-lo escrever primeiro o que
+   encontrou, e o JSON só no fim numa linha "JSON:", pesquisa sempre. */
+const INSTR_JSON = "Responde SÓ com este JSON, sem texto à volta:";
+const INSTR_PROFUNDA = `Primeiro PESQUISA no Google (o Vivino deste vinho e o preço em lojas
+portuguesas, pelo menos) e escreve, em texto corrido, o que encontraste e em
+que sítio. Depois, no FIM da resposta, numa linha que comece por JSON:,
+escreve o resultado neste formato — um campo que a pesquisa não confirmou
+fica de fora, MESMO que aches que sabes a resposta:`;
+function jsonDoFim(txt: string): string {
+  const i = txt.lastIndexOf("JSON:");
+  return i >= 0 ? txt.slice(i + 5) : txt;
+}
 
 const prompt = (nome: string, produtor: string, ano: number | null, tipo: string) => `
 És um enólogo a preencher a ficha de um vinho que foi oferecido como prenda de anos.
@@ -258,7 +265,12 @@ Deno.serve(async (req) => {
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let modelo = "";
   try {
-    const lista = await candidatos(ctrl.signal);
+    // A profunda fica pelos dois estáveis: a volta por todos os candidatos,
+    // cada um a responder sem pesquisar, esgotava o tempo (24/09/2026).
+    const lista = (await candidatos(ctrl.signal)).slice(0, profunda ? 2 : undefined);
+    const textoPedido = profunda
+      ? prompt(nome, produtor, ano, tipoPedido).replace(INSTR_JSON, INSTR_PROFUNDA)
+      : prompt(nome, produtor, ano, tipoPedido);
     let vazioMotivo = "";
     let ultimoErro = "";
     let usage: any = null;
@@ -266,7 +278,7 @@ Deno.serve(async (req) => {
     // modelo seguinte; se nenhum pesquisar, usa-se a reserva.
     let reserva: { gd: any; bruto: string; motivo: string; modelo: string } | null = null;
     const responder = async (gd: any, bruto: string, motivo: string) => {
-      const parsed = extrairJson(bruto);
+      const parsed = extrairJson(profunda ? jsonDoFim(bruto) : bruto);
       if (!parsed) {
         await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
         return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
@@ -283,16 +295,24 @@ Deno.serve(async (req) => {
     for (const m of lista) {
       if (ctrl.signal.aborted) break;
       modelo = m;
-      const g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
+      // Na profunda, cada modelo tem o seu tecto: um que se arraste não pode
+      // levar consigo a resposta de reserva do anterior.
+      let g: Response;
+      try {
+        g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: ctrl.signal,
+        signal: profunda ? AbortSignal.any([ctrl.signal, AbortSignal.timeout(40_000)]) : ctrl.signal,
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt(nome, produtor, ano, tipoPedido) + (profunda ? PROMPT_PROFUNDA : "") }] }],
+          contents: [{ role: "user", parts: [{ text: textoPedido }] }],
           generationConfig: { temperature: 0 },
           tools: [{ google_search: {} }],
         }),
-      });
+        });
+      } catch (e) {
+        if (ctrl.signal.aborted || !reserva) throw e;
+        break;
+      }
       if (!g.ok) {
         ultimoErro = `gemini ${g.status} (${m})`;
         if (g.status === 404) { _models = null; continue; }
