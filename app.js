@@ -604,7 +604,7 @@ function renderDividas() {
               ${d.por_confirmar > 0 ? '<span class="pill espera">⏳</span>' : ''}
               <b class="gr-v">${eur(d.saldo)}</b>
               ${d.devedor === AC.eu && !(d.por_confirmar > 0) ? `<button class="btn mini prim" onclick="declararPagamento(${id})">Já paguei</button>` : ''}
-              ${podeGerirEvento(ev) && d.devedor !== AC.eu ? `<button class="btn mini ghost" onclick="registarRecebido(${id},'${escJs(d.devedor)}')">Recebi</button>` : ''}</div>`).join('') + `</div>`;
+              ${podeGerirEvento(ev) && d.devedor !== AC.eu ? `<button class="btn mini ghost" onclick="registarRecebido(${id},'${escJs(d.devedor)}')">Recebi</button><button class="btn mini ghost" title="Lembrar" onclick="lembrar(${id},'${escJs(d.devedor)}')">🔔</button>` : ''}</div>`).join('') + `</div>`;
     }).join('');
     el.innerHTML = html;
 }
