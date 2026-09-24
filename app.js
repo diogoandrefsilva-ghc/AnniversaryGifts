@@ -1651,4 +1651,21 @@ async function sbSolicitarAcesso() {
 /* ── INIT ───────────────────────────────────────────────────────────────── */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && _folhas.length) fecharFolha(); });
+// iPhone: com o teclado (ou a roda da data) aberto, a tabbar fixa sobe para
+// cima dele e tapa o campo; ao fechar, o Safari às vezes deixa-a a meio do
+// ecrã (Definições › limite/desde quando, com scroll até ao fim). Esconde-se
+// enquanto há um campo focado e volta a ser desenhada de novo quando a
+// viewport volta ao tamanho inteiro — o redesenho é que a repõe no fundo.
+function _campoTexto(el) {
+    return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
+        || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|range|file|color|image)$/.test(el.type)));
+}
+function _tabbarRepor() {
+    if (_campoTexto(document.activeElement)) return;
+    document.documentElement.classList.remove('a-escrever');
+    window.scrollTo(window.scrollX, window.scrollY);
+}
+document.addEventListener('focusin', e => { if (_campoTexto(e.target)) document.documentElement.classList.add('a-escrever'); });
+document.addEventListener('focusout', () => setTimeout(_tabbarRepor, 350));
+if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(_tabbarRepor, 50));
 sbInit();
