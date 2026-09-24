@@ -112,6 +112,16 @@ catalogo_id`.
 - **Esta app NÃO escreve no catálogo.** O catálogo tem dono (WineCatalog) e
   regras de força por origem; uma porta de escrita nova teria de passar pela
   `juntar` e pela `forca()` de lá — decisão desse repo, não deste.
+- **De memória ou pesquisado (24/09/2026).** Ligar o `google_search` não
+  obriga o modelo a pesquisar, e nos registos das apps nunca o fez:
+  respondeu de memória. Para toda a gente fica assim; a resposta leva
+  `pesquisaWeb`, e ao admin (`acesso().admin`, confirmado na função) a de
+  memória mostra 🧠 e o botão **🔬 Pesquisa profunda** (`profunda:true`),
+  que exige a pesquisa e passa ao modelo seguinte se ela não acontecer. O
+  que a profunda confirmar substitui só o que a de memória tinha preenchido
+  (`_pesqMemoria`), nunca o que foi escrito à mão. Mesmo critério nas
+  quatro apps — ver o `CLAUDE.md` da WineCatalog, "De memória ou
+  pesquisado".
 - A `prendas-vinho` segue as lições das irmãs (ver o `CLAUDE.md` da
   WineCatalog): só ponteiros `-latest`; nada de `thinkingBudget:0` com
   `google_search`; o corpo lê-se DENTRO do ciclo e um 200 vazio passa ao

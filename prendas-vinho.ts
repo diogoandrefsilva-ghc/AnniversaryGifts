@@ -133,6 +133,29 @@ function fontesGrounding(body: any): { titulo: string; url: string }[] {
   return out;
 }
 
+/* HOUVE PESQUISA OU NÃO. Ligar o `google_search` não obriga o modelo a
+   pesquisar — ele decide, e nos registos até 24/09/2026 nunca o fez (em
+   nenhuma das apps): as respostas vinham do que aprendeu no treino. Para
+   toda a gente fica como está; a resposta passa a dizê-lo (`pesquisaWeb`) e
+   ao admin a app oferece a "pesquisa profunda" (`profunda:true`), que exige
+   a pesquisa no prompt e passa ao modelo seguinte se a resposta vier sem
+   ela. Mesmo critério das outras apps — ver o CLAUDE.md da WineCatalog,
+   "De memória ou pesquisado". */
+function fezPesquisa(gd: any): boolean {
+  const gm = gd?.candidates?.[0]?.groundingMetadata;
+  return (Array.isArray(gm?.webSearchQueries) && gm.webSearchQueries.length > 0) ||
+    (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
+    Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
+}
+const PROMPT_PROFUNDA = `
+
+OBRIGATÓRIO — PESQUISA A SÉRIO, NÃO DE MEMÓRIA:
+- Antes de escreveres o JSON, usa a ferramenta de pesquisa Google — pelo
+  menos o Vivino deste vinho e o preço em lojas portuguesas.
+- Um campo que a pesquisa não confirmar fica fora do JSON, MESMO que aches
+  que sabes a resposta. Esta pesquisa foi pedida precisamente porque a
+  resposta de memória não chega.`;
+
 const prompt = (nome: string, produtor: string, ano: number | null, tipo: string) => `
 És um enólogo a preencher a ficha de um vinho que foi oferecido como prenda de anos.
 Usa PESQUISA WEB para confirmar os dados — não respondas de memória.
@@ -228,6 +251,8 @@ Deno.serve(async (req) => {
   // Figos" tinto do branco. Só entra no prompt se for uma das cores conhecidas.
   const tipoPedido = TIPOS.find((x) => x.toLowerCase() === texto(corpo.tipo, 20).toLowerCase()) ?? "";
   if (!nome) return json({ error: "falta o nome do vinho" }, 400);
+  const profunda = corpo.profunda === true;
+  if (profunda && !acesso.admin) return json({ error: "a pesquisa profunda é só para o admin" }, 403);
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -237,6 +262,24 @@ Deno.serve(async (req) => {
     let vazioMotivo = "";
     let ultimoErro = "";
     let usage: any = null;
+    // Na profunda, uma resposta sem pesquisa fica de reserva e tenta-se o
+    // modelo seguinte; se nenhum pesquisar, usa-se a reserva.
+    let reserva: { gd: any; bruto: string; motivo: string; modelo: string } | null = null;
+    const responder = async (gd: any, bruto: string, motivo: string) => {
+      const parsed = extrairJson(bruto);
+      if (!parsed) {
+        await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
+        return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
+      }
+      const ficha = normalizar(parsed);
+      const fontes = fontesGrounding(gd);
+      const pesquisaWeb = fezPesquisa(gd);
+      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, pesquisaWeb, ...(profunda ? { profunda: true } : {}), finishReason: motivo, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
+      return json({
+        encontrado: parsed.encontrado !== false && Object.keys(ficha).length > 0,
+        ficha, fontes, aviso: texto(parsed.aviso, 300), modelo, pesquisaWeb, profunda,
+      });
+    };
     for (const m of lista) {
       if (ctrl.signal.aborted) break;
       modelo = m;
@@ -245,7 +288,7 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json" },
         signal: ctrl.signal,
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt(nome, produtor, ano, tipoPedido) }] }],
+          contents: [{ role: "user", parts: [{ text: prompt(nome, produtor, ano, tipoPedido) + (profunda ? PROMPT_PROFUNDA : "") }] }],
           generationConfig: { temperature: 0 },
           tools: [{ google_search: {} }],
         }),
@@ -262,19 +305,15 @@ Deno.serve(async (req) => {
       const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
       usage = gd?.usageMetadata ?? usage;
       if (!bruto) { vazioMotivo = motivo || "resposta vazia"; continue; } // 200 vazio → modelo seguinte
-
-      const parsed = extrairJson(bruto);
-      if (!parsed) {
-        await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
-        return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
+      if (profunda && !fezPesquisa(gd)) {
+        if (!reserva) reserva = { gd, bruto, motivo, modelo: m };
+        continue;
       }
-      const ficha = normalizar(parsed);
-      const fontes = fontesGrounding(gd);
-      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, finishReason: motivo, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
-      return json({
-        encontrado: parsed.encontrado !== false && Object.keys(ficha).length > 0,
-        ficha, fontes, aviso: texto(parsed.aviso, 300), modelo,
-      });
+      return await responder(gd, bruto, motivo);
+    }
+    if (reserva) {
+      modelo = reserva.modelo;
+      return await responder(reserva.gd, reserva.bruto, reserva.motivo);
     }
     // Nenhum escreveu nada: é ERRO, e diz-se porquê.
     const erro = vazioMotivo

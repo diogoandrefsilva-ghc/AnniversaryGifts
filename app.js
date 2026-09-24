@@ -733,6 +733,7 @@ const TIPOS_VINHO = ['', 'Tinto', 'Branco', 'Rosé', 'Espumante', 'Licoroso', 'F
 
 function novoEvento(nome, data) {
     const aniv = nome || '';
+    _pesqMemoria = [];
     _form = {
         id: null, aniversariante: aniv, data: data || hoje(),
         responsavel: aniv ? (responsavelPor(aniv) || '') : (AC.eu || ''),
@@ -747,6 +748,7 @@ function editarEvento(id) {
     if (!ev) return;
     // Quem já tem a conta a zero nesta prenda aparece marcado como "já pagou".
     const pagos = dividasDoEvento(id).filter(d => d.saldo <= 0.004).map(d => d.devedor);
+    _pesqMemoria = [];
     _form = {
         id: ev.id, aniversariante: ev.aniversariante, data: ev.data, responsavel: ev.responsavel,
         participantes: ev.participantes.slice(), estado: ev.estado,
@@ -1086,23 +1088,46 @@ async function procurarVinho() {
     }
     redesenharFolha();
 }
-async function pesquisarVinhoInternet() {
+/* DE MEMÓRIA OU PESQUISADO (só o admin vê). O Gemini decide sozinho se
+   usa a pesquisa Google, e muitas vezes responde com o que aprendeu no
+   treino (`pesquisaWeb:false`). Para toda a gente fica como está; ao admin
+   diz-se, e oferece-se a PESQUISA PROFUNDA, que obriga à pesquisa. O que a
+   profunda confirmar SUBSTITUI o que a de memória tinha preenchido — e só
+   isso (`_pesqMemoria`): o que alguém escreveu à mão nunca se toca. */
+let _pesqMemoria = [];
+function _memoriaHTML(r) {
+    if (!AC.admin || !r || r.pesquisaWeb !== false) return '';
+    if (r.profunda) return '<br><small>🧠 Mesmo obrigado, o Gemini não pesquisou no Google — isto veio de memória.</small>';
+    return `<br><small>🧠 O Gemini respondeu <b>de memória</b>, sem pesquisa Google.</small>
+      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa profunda <small>(obriga a pesquisar)</small></button>`;
+}
+async function pesquisarVinhoInternet(profunda) {
     lerForm();
     const v = _form.vinho;
     const btn = document.getElementById('btn-pesquisar');
-    if (btn) { btn.disabled = true; btn.innerHTML = '🌐 A pesquisar… <small>pode levar um minuto</small>'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = profunda ? '🔬 A pesquisar a fundo… <small>pode levar um minuto</small>' : '🌐 A pesquisar… <small>pode levar um minuto</small>'; }
     try {
-        const r = await edgeFn('prendas-vinho', { nome: v.nome, produtor: v.produtor || '', ano: v.ano || null, tipo: v.tipo || '' }, 110000);
+        const pedido = { nome: v.nome, produtor: v.produtor || '', ano: v.ano || null, tipo: v.tipo || '' };
+        if (profunda) pedido.profunda = true;
+        const r = await edgeFn('prendas-vinho', pedido, 110000);
         if (!_form) return;
         if (!r.encontrado) {
-            _procuraRelatorio = `<div class="relatorio">🌐 A pesquisa não encontrou este vinho${r.aviso ? ': ' + esc(r.aviso) : '.'} Confirma o nome e o produtor.</div>`;
+            _procuraRelatorio = `<div class="relatorio">🌐 A pesquisa não encontrou este vinho${r.aviso ? ': ' + esc(r.aviso) : '.'} Confirma o nome e o produtor.${_memoriaHTML(r)}</div>`;
         } else {
+            if (profunda && r.pesquisaWeb) {
+                _pesqMemoria.forEach(k => {
+                    const nv = (r.ficha || {})[k];
+                    if (nv != null && nv !== '' && !(Array.isArray(nv) && !nv.length)) _form.vinho[k] = null;
+                });
+            }
             const entrou = _preencherVazios(r.ficha || {});
+            const chaves = Object.keys(r.ficha || {}).filter(k => entrou.includes(ROTULOS[k] || k));
+            _pesqMemoria = r.pesquisaWeb === false ? _pesqMemoria.concat(chaves) : _pesqMemoria.filter(k => !chaves.includes(k));
             if (entrou.length) {
                 _form.vinho.origem = _form.vinho.origem === 'catalogo' ? 'catalogo' : 'pesquisa';
                 _form.vinho.fontes = r.fontes || [];
             }
-            _procuraRelatorio = `<div class="relatorio ok">🌐 ${entrou.length ? 'Preenchi: ' + entrou.join(', ') + '.' : 'Nada de novo para os campos vazios.'}${r.aviso ? `<br><small>⚠️ ${esc(r.aviso)}</small>` : ''}${(r.fontes || []).length ? '' : '<br><small>Sem fontes citadas — confirma antes de acreditar.</small>'}</div>`;
+            _procuraRelatorio = `<div class="relatorio ok">🌐 ${entrou.length ? 'Preenchi: ' + entrou.join(', ') + '.' : 'Nada de novo para os campos vazios.'}${r.aviso ? `<br><small>⚠️ ${esc(r.aviso)}</small>` : ''}${(r.fontes || []).length ? '' : '<br><small>Sem fontes citadas — confirma antes de acreditar.</small>'}${_memoriaHTML(r)}</div>`;
         }
     } catch (e) {
         _procuraRelatorio = `<div class="relatorio erro">🌐 ${esc(e.name === 'AbortError' ? 'A pesquisa demorou demasiado — tenta outra vez.' : e.message)}</div>`;
