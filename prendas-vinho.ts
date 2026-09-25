@@ -91,6 +91,20 @@ function extrairJson(txt: string): any | null {
   if (ini < 0 || fim <= ini) return null;
   try { return JSON.parse(sem.slice(ini, fim + 1)); } catch (_) { return null; }
 }
+/* O link do Vivino só no formato que o Vivino usa: `/<nome>/w/<nº>`, limpo
+   de país, língua e ?year=. `/Wines/<nome>` e afins são o que um modelo
+   escreve de memória — nunca existiram e partem ao abrir (25/09/2026).
+   A MESMA regra da `catalogo-info`/`vinho-info` — ver o CLAUDE.md da
+   WineCatalog, "Links do Vivino". */
+function vivinoLink(u: unknown): string {
+  try {
+    const url = new URL(String(u ?? "").trim());
+    if (!/(^|\.)vivino\.com$/i.test(url.hostname)) return "";
+    const m = url.pathname.match(/\/([a-z0-9-]+)\/w\/(\d+)/i);
+    return m ? `https://www.vivino.com/${m[1].toLowerCase()}/w/${m[2]}` : "";
+  } catch { return ""; }
+}
+
 function normalizar(raw: any): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || raw.encontrado === false) return {};
   const castas = Array.isArray(raw.castas)
@@ -107,7 +121,7 @@ function normalizar(raw: any): Record<string, unknown> {
     teor: numero(raw.teor, 4, 25, 1),
     estagio: texto(raw.estagio, 160),
     vivino_nota: numero(raw.vivinoNota, 1, 5, 2),
-    vivino_url: /^https?:\/\/([a-z0-9-]+\.)*vivino\.com\//i.test(String(raw.vivinoUrl ?? "").trim()) ? texto(raw.vivinoUrl, 300) : "",
+    vivino_url: vivinoLink(raw.vivinoUrl),
     imagem_url: /^https?:\/\/\S+\.(jpe?g|png|webp|avif)(\?\S*)?$/i.test(String(raw.imagemUrl ?? "").trim()) ? texto(raw.imagemUrl, 400) : "",
     preco_medio: numero(raw.precoMedio, 0.5, 100_000, 2),
     notas_prova: texto(raw.notasProva, 600),
