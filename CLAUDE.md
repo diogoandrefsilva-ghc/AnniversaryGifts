@@ -136,6 +136,19 @@ catalogo_id`.
   o Gemini = linha nova em `ia_uso.funcoes`**, senão o custo sai errado. **Se mexeres na
   escolha de modelo aqui, vai ver as outras no mesmo dia.**
 
+## A lista de amigos é também um portão noutra app (25/09/2026)
+A WineSelection mostra marcas nos vinhos de uma carta — 🍾 na garrafeira
+de um amigo, ⭐ bebido e com nota, 💭 na wishlist, 🎁 já foi prenda — e
+"os amigos" são ESTA tabela: quem está em `amigos` (ativo, com email) vê as
+marcas, e só contam as garrafeiras dos que estão cá. Quem responde é a
+`winecatalog.marcas_amigos` (`db/amigos.sql` no repo WineCatalog), que lê
+`amigos` e `eventos` diretamente. Por isso: **pôr ou tirar alguém daqui,
+ou desligar o `ativo`, também decide o que essa pessoa vê e mostra lá.**
+A regra da surpresa vale lá também — uma prenda por entregar nunca aparece
+a quem a vai receber —, e se mudares os estados (`comprado`/`entregue`) ou
+os campos `vinho.nome`/`produtor`/`catalogo_id`, vê essa função no mesmo
+dia.
+
 ## A garrafa é SURPRESA para quem faz anos
 - **Estados: só `comprado` e `entregue`.** "Por comprar" saiu a pedido do
   dono: a prenda regista-se quando a garrafa já foi comprada, e "comprada"
