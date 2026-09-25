@@ -117,7 +117,10 @@ catalogo_id`.
   respondeu de memória. Para toda a gente fica assim; a resposta leva
   `pesquisaWeb`, e ao admin (`acesso().admin`, confirmado na função) a de
   memória mostra 🧠 e o botão **🔬 Pesquisa profunda** (`profunda:true`),
-  que exige a pesquisa e passa ao modelo seguinte se ela não acontecer. O
+  que desde 25/09/2026 é **Serper, não grounding** (não há parâmetro na API
+  que obrigue o Gemini a pesquisar): a função faz duas consultas ao Google
+  pelo Serper (geral + Vivino, chave `SEARCH_API_KEY`, segredo do projeto)
+  e o Gemini só lê os resultados; sem resultados, erro sem chamar o Gemini. O
   que a profunda confirmar substitui só o que a de memória tinha preenchido
   (`_pesqMemoria`), nunca o que foi escrito à mão. Mesmo critério nas
   quatro apps — ver o `CLAUDE.md` da WineCatalog, "De memória ou

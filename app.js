@@ -1091,15 +1091,15 @@ async function procurarVinho() {
 /* DE MEMÓRIA OU PESQUISADO (só o admin vê). O Gemini decide sozinho se
    usa a pesquisa Google, e muitas vezes responde com o que aprendeu no
    treino (`pesquisaWeb:false`). Para toda a gente fica como está; ao admin
-   diz-se, e oferece-se a PESQUISA PROFUNDA, que obriga à pesquisa. O que a
+   diz-se, e oferece-se a PESQUISA PROFUNDA: a Edge Function pesquisa ela
+   própria no Google (Serper) e o Gemini só lê os resultados. O que a
    profunda confirmar SUBSTITUI o que a de memória tinha preenchido — e só
    isso (`_pesqMemoria`): o que alguém escreveu à mão nunca se toca. */
 let _pesqMemoria = [];
 function _memoriaHTML(r) {
     if (!AC.admin || !r || r.pesquisaWeb !== false) return '';
-    if (r.profunda) return '<br><small>🧠 Mesmo obrigado, o Gemini não pesquisou no Google — isto veio de memória.</small>';
     return `<br><small>🧠 O Gemini respondeu <b>de memória</b>, sem pesquisa Google.</small>
-      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa profunda <small>(obriga a pesquisar)</small></button>`;
+      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa profunda <small>(pesquisa mesmo no Google)</small></button>`;
 }
 async function pesquisarVinhoInternet(profunda) {
     lerForm();

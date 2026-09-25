@@ -137,39 +137,75 @@ function fontesGrounding(body: any): { titulo: string; url: string }[] {
    pesquisar — ele decide, e nos registos até 24/09/2026 nunca o fez (em
    nenhuma das apps): as respostas vinham do que aprendeu no treino. Para
    toda a gente fica como está; a resposta passa a dizê-lo (`pesquisaWeb`) e
-   ao admin a app oferece a "pesquisa profunda" (`profunda:true`), que exige
-   a pesquisa no prompt e passa ao modelo seguinte se a resposta vier sem
-   ela. Mesmo critério das outras apps — ver o CLAUDE.md da WineCatalog,
-   "De memória ou pesquisado". */
+   ao admin a app oferece a "pesquisa profunda" (`profunda:true`). Mesmo
+   critério das outras apps — ver o CLAUDE.md da WineCatalog, "De memória ou
+   pesquisado". */
 function fezPesquisa(gd: any): boolean {
   const gm = gd?.candidates?.[0]?.groundingMetadata;
   return (Array.isArray(gm?.webSearchQueries) && gm.webSearchQueries.length > 0) ||
     (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
     Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
 }
-/* O que faz o modelo pesquisar a sério (testado a 24/09/2026 — ver o
-   CLAUDE.md da WineCatalog, "De memória ou pesquisado"): não é pedir-lho
-   com mais força. Com "Responde SÓ com este JSON" o modelo preenche de
-   memória, com ou sem "OBRIGATÓRIO"; a deixá-lo escrever primeiro o que
-   encontrou, e o JSON só no fim numa linha "JSON:", pesquisa sempre. */
-const INSTR_JSON = "Responde SÓ com este JSON, sem texto à volta:";
-const INSTR_PROFUNDA = `Primeiro PESQUISA no Google (o Vivino deste vinho e o preço em lojas
-portuguesas, pelo menos) e escreve, em texto corrido, o que encontraste e em
-que sítio. Depois, no FIM da resposta, numa linha que comece por JSON:,
-escreve o resultado neste formato — um campo que a pesquisa não confirmou
-fica de fora, MESMO que aches que sabes a resposta:`;
-function jsonDoFim(txt: string): string {
-  const i = txt.lastIndexOf("JSON:");
-  return i >= 0 ? txt.slice(i + 5) : txt;
+
+/* A PESQUISA PROFUNDA É SERPER, NÃO GROUNDING (25/09/2026). Não há
+   parâmetro nenhum na API do Gemini que o OBRIGUE a pesquisar, e mudar o
+   prompt só mexe nas probabilidades (a 24/09/2026, com o prompt a pedir
+   "primeiro pesquisa", a Garrafeira respondeu de memória na mesma). Só uma
+   pesquisa feita por NÓS é garantida: duas consultas ao Google pelo Serper
+   (uma geral — preço, lojas — e uma ao Vivino), e o Gemini só LÊ os
+   resultados, sem `google_search`. A chave (`SEARCH_API_KEY`) é segredo do
+   PROJETO Supabase — a mesma do "modo grátis" da Garrafeira. Mesmo
+   critério da `catalogo-info`, da `verificar-vinhos` e da `vinho-info`. */
+const SEARCH_API_KEY = Deno.env.get("SEARCH_API_KEY") ?? "";
+const SEARCH_API_URL = Deno.env.get("SEARCH_API_URL") || "https://google.serper.dev/search";
+const CUSTO_SERPER_EUR = 0.001;      // por consulta, grosseiro como os outros
+const CUSTO_GEMINI_SO_EUR = 0.002;   // a profunda: o Gemini só lê, não pesquisa
+async function pesquisarSerper(consultas: string[], signal: AbortSignal):
+  Promise<{ texto: string; fontes: { titulo: string; url: string }[] }> {
+  if (!SEARCH_API_KEY) throw new Error("a pesquisa externa não está configurada (falta SEARCH_API_KEY)");
+  const respostas = await Promise.all(consultas.map(async (q) => {
+    const r = await fetch(SEARCH_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-KEY": SEARCH_API_KEY },
+      body: JSON.stringify({ q, gl: "pt", hl: "pt", num: 8 }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
+    });
+    if (!r.ok) throw new Error(`a pesquisa externa respondeu ${r.status}`);
+    const d = await r.json();
+    return Array.isArray(d?.organic) ? d.organic : [];
+  }));
+  const vistos = new Set<string>();
+  const linhas: any[] = [];
+  for (const x of respostas.flat()) {
+    const url = String(x?.link || "").trim();
+    if (!/^https?:\/\//i.test(url) || vistos.has(url)) continue;
+    vistos.add(url);
+    linhas.push(x);
+  }
+  const txt = linhas.map((x, i) =>
+    `[${i + 1}] ${String(x?.title || "").trim()}\nURL: ${String(x.link).trim()}\n` +
+    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}`).join("\n\n");
+  return {
+    texto: txt.slice(0, 8000),
+    fontes: linhas.slice(0, 6).map((x) => ({ titulo: texto(x?.title || x.link, 120), url: String(x.link).slice(0, 400) })),
+  };
 }
 
-const prompt = (nome: string, produtor: string, ano: number | null, tipo: string) => `
+// `evidencia` (só na profunda): os resultados do Serper.
+const prompt = (nome: string, produtor: string, ano: number | null, tipo: string, evidencia = "") => `
 És um enólogo a preencher a ficha de um vinho que foi oferecido como prenda de anos.
-Usa PESQUISA WEB para confirmar os dados — não respondas de memória.
+${evidencia
+  ? `Responde APENAS com base na BASE DE EVIDÊNCIA abaixo (resultados de uma
+pesquisa Google já feita). Não uses o que sabes de memória: o que não estiver
+nestes resultados fica fora do JSON.`
+  : "Usa PESQUISA WEB para confirmar os dados — não respondas de memória."}
 
 VINHO:
   Nome: ${nome}
-${tipo ? `  Cor: ${tipo} (dita por quem tem a garrafa — é um dado seguro; se o nome tiver versões de outra cor, é ESTA)\n` : ""}${produtor ? `  Produtor: ${produtor}\n` : ""}${ano ? `  Colheita: ${ano}\n` : ""}
+${tipo ? `  Cor: ${tipo} (dita por quem tem a garrafa — é um dado seguro; se o nome tiver versões de outra cor, é ESTA)\n` : ""}${produtor ? `  Produtor: ${produtor}\n` : ""}${ano ? `  Colheita: ${ano}\n` : ""}${evidencia ? `
+BASE DE EVIDÊNCIA:
+${evidencia}
+` : ""}
 REGRAS:
 1. NÃO INVENTES. Um campo que não confirmes fica fora do JSON.
 2. Se o produtor tiver vários vinhos com este nome (Reserva, Grande Reserva,
@@ -265,28 +301,44 @@ Deno.serve(async (req) => {
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let modelo = "";
   try {
-    // A profunda fica pelos dois estáveis: a volta por todos os candidatos,
-    // cada um a responder sem pesquisar, esgotava o tempo (24/09/2026).
-    const lista = (await candidatos(ctrl.signal)).slice(0, profunda ? 2 : undefined);
-    const textoPedido = profunda
-      ? prompt(nome, produtor, ano, tipoPedido).replace(INSTR_JSON, INSTR_PROFUNDA)
-      : prompt(nome, produtor, ano, tipoPedido);
+    // Profunda: a pesquisa faz-se AQUI, antes do Gemini (ver `pesquisarSerper`).
+    let evidencia = "";
+    let fontesSerper: { titulo: string; url: string }[] = [];
+    const serperConsultas = profunda ? 2 : 0;
+    if (profunda) {
+      const q = [nome, produtor, ano].filter(Boolean).join(" ");
+      try {
+        const r = await pesquisarSerper([`${q} vinho preço`, `${[nome, produtor].filter(Boolean).join(" ")} vivino`], ctrl.signal);
+        evidencia = r.texto;
+        fontesSerper = r.fontes;
+      } catch (e) {
+        if (ctrl.signal.aborted) throw e;
+        await registarIaUso("erro", { passo: "serper", profunda: true, erro: String((e as Error).message).slice(0, 300), ms: Date.now() - t0, nome }, quem);
+        return json({ error: `a pesquisa Google não respondeu (${(e as Error).message}) — tenta outra vez` }, 503);
+      }
+      if (!evidencia) {
+        await registarIaUso("ok", { passo: "serper_vazio", profunda: true, serper_consultas: serperConsultas, custo_estimado_eur: serperConsultas * CUSTO_SERPER_EUR, ms: Date.now() - t0, nome }, quem);
+        return json({ error: "a pesquisa Google não encontrou nada sobre este vinho — confirma o nome e o produtor" }, 404);
+      }
+    }
+    const lista = await candidatos(ctrl.signal);
+    const textoPedido = prompt(nome, produtor, ano, tipoPedido, evidencia);
+    const custo = profunda ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR : CUSTO_PESQUISA_EUR;
+    const serperLog = profunda ? { pesquisa_externa: "serper", serper_consultas: serperConsultas } : {};
     let vazioMotivo = "";
     let ultimoErro = "";
     let usage: any = null;
-    // Na profunda, uma resposta sem pesquisa fica de reserva e tenta-se o
-    // modelo seguinte; se nenhum pesquisar, usa-se a reserva.
-    let reserva: { gd: any; bruto: string; motivo: string; modelo: string } | null = null;
     const responder = async (gd: any, bruto: string, motivo: string) => {
-      const parsed = extrairJson(profunda ? jsonDoFim(bruto) : bruto);
+      const parsed = extrairJson(bruto);
       if (!parsed) {
-        await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
+        await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, ...serperLog, nome }, quem);
         return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
       }
       const ficha = normalizar(parsed);
-      const fontes = fontesGrounding(gd);
-      const pesquisaWeb = fezPesquisa(gd);
-      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, pesquisaWeb, ...(profunda ? { profunda: true } : {}), finishReason: motivo, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: CUSTO_PESQUISA_EUR, nome }, quem);
+      // Na profunda, a pesquisa foi nossa: as fontes são as do Serper, e houve pesquisa.
+      const fontes = profunda ? fontesSerper : fontesGrounding(gd);
+      const pesquisaWeb = profunda ? true : fezPesquisa(gd);
+      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, pesquisaWeb, ...(profunda ? { profunda: true } : {}), ...serperLog, finishReason: motivo, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, nome }, quem);
       return json({
         encontrado: parsed.encontrado !== false && Object.keys(ficha).length > 0,
         ficha, fontes, aviso: texto(parsed.aviso, 300), modelo, pesquisaWeb, profunda,
@@ -295,24 +347,18 @@ Deno.serve(async (req) => {
     for (const m of lista) {
       if (ctrl.signal.aborted) break;
       modelo = m;
-      // Na profunda, cada modelo tem o seu tecto: um que se arraste não pode
-      // levar consigo a resposta de reserva do anterior.
-      let g: Response;
-      try {
-        g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
+      // Na profunda a pesquisa já foi feita (Serper): sem tool, e JSON direto.
+      const g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: profunda ? AbortSignal.any([ctrl.signal, AbortSignal.timeout(40_000)]) : ctrl.signal,
+        signal: ctrl.signal,
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: textoPedido }] }],
-          generationConfig: { temperature: 0 },
-          tools: [{ google_search: {} }],
+          ...(profunda
+            ? { generationConfig: { temperature: 0, responseMimeType: "application/json" } }
+            : { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }),
         }),
-        });
-      } catch (e) {
-        if (ctrl.signal.aborted || !reserva) throw e;
-        break;
-      }
+      });
       if (!g.ok) {
         ultimoErro = `gemini ${g.status} (${m})`;
         if (g.status === 404) { _models = null; continue; }
@@ -325,21 +371,13 @@ Deno.serve(async (req) => {
       const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
       usage = gd?.usageMetadata ?? usage;
       if (!bruto) { vazioMotivo = motivo || "resposta vazia"; continue; } // 200 vazio → modelo seguinte
-      if (profunda && !fezPesquisa(gd)) {
-        if (!reserva) reserva = { gd, bruto, motivo, modelo: m };
-        continue;
-      }
       return await responder(gd, bruto, motivo);
-    }
-    if (reserva) {
-      modelo = reserva.modelo;
-      return await responder(reserva.gd, reserva.bruto, reserva.motivo);
     }
     // Nenhum escreveu nada: é ERRO, e diz-se porquê.
     const erro = vazioMotivo
       ? `o modelo respondeu sem escrever nada (${vazioMotivo}) — tenta outra vez`
       : (ultimoErro || "não consegui falar com o Gemini — tenta outra vez");
-    await registarIaUso("erro", { passo: vazioMotivo ? "gemini_vazio" : "gemini", modelo, erro, finishReason: vazioMotivo || null, usageMetadata: usage, ms: Date.now() - t0, nome }, quem);
+    await registarIaUso("erro", { passo: vazioMotivo ? "gemini_vazio" : "gemini", modelo, erro, finishReason: vazioMotivo || null, usageMetadata: usage, ms: Date.now() - t0, ...serperLog, nome }, quem);
     return json({ error: erro }, 502);
   } catch (e) {
     const abort = (e as Error).name === "AbortError";
