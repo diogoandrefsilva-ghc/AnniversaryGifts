@@ -184,7 +184,7 @@ async function pesquisarSerper(consultas: string[], signal: AbortSignal):
   }
   const txt = linhas.map((x, i) =>
     `[${i + 1}] ${String(x?.title || "").trim()}\nURL: ${String(x.link).trim()}\n` +
-    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}`).join("\n\n");
+    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}` + (x?.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : "")).join("\n\n");
   return {
     texto: txt.slice(0, 8000),
     fontes: linhas.slice(0, 6).map((x) => ({ titulo: texto(x?.title || x.link, 120), url: String(x.link).slice(0, 400) })),
@@ -308,7 +308,7 @@ Deno.serve(async (req) => {
     if (profunda) {
       const q = [nome, produtor, ano].filter(Boolean).join(" ");
       try {
-        const r = await pesquisarSerper([`${q} vinho preço`, `${[nome, produtor].filter(Boolean).join(" ")} vivino`], ctrl.signal);
+        const r = await pesquisarSerper([`${q} vinho preço`, `"${nome.replace(/"/g, "")}" ${produtor} site:vivino.com`.replace(/\s+/g, " ")], ctrl.signal);
         evidencia = r.texto;
         fontesSerper = r.fontes;
       } catch (e) {
