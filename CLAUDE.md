@@ -96,6 +96,14 @@ catalogo_id`.
   `prendas-vinho` (pesquisa Google com grounding, síncrona, ~€0.01).
 - **Nenhum dos dois escreve por cima do que já está no formulário** — só
   preenche vazios. Quem tem a garrafa na mão sabe melhor.
+- **O ecrã fala por etapas, com as mesmas palavras da Garrafeira**
+  (26/09/2026): "O vinho já existe no Catálogo e a informação foi
+  importada: …" / "O vinho não existe no Catálogo." → "Queres usar a IA
+  para complementar a pesquisa, ou preencher à mão?" → "A pesquisa com IA
+  terminou e preencheu mais N campos." → ao admin, "Pretendes fazer a
+  pesquisa avançada?" (a profunda). O botão da IA aparece sempre, e não só
+  quando o catálogo trouxe pouco. Os sites de referência da avançada da
+  Garrafeira ainda não existem aqui: a `prendas-vinho` não os recebe.
 - **A COR escolhe-se ANTES da procura** (o produtor vem depois, e a procura
   preenche-o): quem tem a garrafa sabe sempre a cor, e é ela que separa o
   "Papa Figos" tinto do branco. A `prendas-vinho` recebe-a no prompt como

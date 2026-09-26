@@ -1075,17 +1075,18 @@ async function procurarVinho() {
             doCatalogo = _preencherVazios(ficha);
             _form.vinho.catalogo_id = r.id;
             if (doCatalogo.length) _form.vinho.origem = 'catalogo';
-            _procuraRelatorio = `<div class="relatorio ok">📚 Encontrado no catálogo: <b>${esc(r.nome)}${r.ano ? ' ' + r.ano : ''}</b>${r.produtor ? ' · ' + esc(r.produtor) : ''}${r.mesmaColheita === false && v.ano ? ` <small>(outra colheita — os dados estáveis servem, a nota pode não servir)</small>` : ''}.<br>${doCatalogo.length ? 'Preenchi: ' + doCatalogo.join(', ') + '.' : 'Não havia nada novo para os campos vazios.'}</div>`;
+            _procuraRelatorio = `<div class="relatorio ok">📚 ${doCatalogo.length
+                ? `O vinho já existe no Catálogo e a informação foi importada: ${esc(doCatalogo.join(', '))}.`
+                : 'O vinho já existe no Catálogo, mas não tinha nada para os campos vazios.'}<br><small>${esc(r.nome)}${r.ano ? ' ' + r.ano : ''}${r.produtor ? ' · ' + esc(r.produtor) : ''}${r.mesmaColheita === false && v.ano ? ' — outra colheita: os dados estáveis servem, a nota pode não servir' : ''}</small></div>`;
         } else {
-            _procuraRelatorio = `<div class="relatorio">📚 O catálogo ainda não conhece este vinho.</div>`;
+            _procuraRelatorio = `<div class="relatorio">📚 O vinho não existe no Catálogo.</div>`;
         }
     } catch (e) {
         _procuraRelatorio = `<div class="relatorio">📚 Não consegui perguntar ao catálogo (${esc(e.message)}).</div>`;
     }
-    // Poucos campos do catálogo → oferecer a pesquisa a sério.
-    if (doCatalogo.length < 4) {
-        _procuraRelatorio += `<button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet()">🌐 Pesquisar na internet <small>(~30 s)</small></button>`;
-    }
+    // Etapa seguinte: a IA, ou à mão (os campos estão logo abaixo).
+    _procuraRelatorio += `<p class="f-texto"><b>${doCatalogo.length ? 'Queres usar a IA para complementar a pesquisa, ou preencher à mão os campos abaixo?' : 'Queres fazer a pesquisa com IA, ou preencher à mão os campos abaixo?'}</b></p>
+      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet()">🔎 Pesquisar com IA <small>(~30 s)</small></button>`;
     redesenharFolha();
 }
 /* DE MEMÓRIA OU PESQUISADO (só o admin vê). O Gemini decide sozinho se
@@ -1096,23 +1097,25 @@ async function procurarVinho() {
    profunda confirmar SUBSTITUI o que a de memória tinha preenchido — e só
    isso (`_pesqMemoria`): o que alguém escreveu à mão nunca se toca. */
 let _pesqMemoria = [];
-function _memoriaHTML(r) {
-    if (!AC.admin || !r || r.pesquisaWeb !== false) return '';
-    return `<br><small>🧠 O Gemini respondeu <b>de memória</b>, sem pesquisa Google.</small>
-      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa profunda <small>(pesquisa mesmo no Google)</small></button>`;
+function _memoriaHTML(r, profunda) {
+    let h = r && r.pesquisaWeb === false ? '<p class="f-texto"><small>🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net — confere antes de gravar.</small></p>' : '';
+    // Etapa 3: a pesquisa avançada (a profunda — a função só a dá ao admin).
+    if (AC.admin && !profunda) h += `<p class="f-texto"><b>Pretendes fazer a pesquisa avançada?</b> <small>Pesquisa mesmo no Google (o Vivino incluído) e a IA só lê o que se encontrou.</small></p>
+      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa avançada <small>(~1 min)</small></button>`;
+    return h;
 }
 async function pesquisarVinhoInternet(profunda) {
     lerForm();
     const v = _form.vinho;
     const btn = document.getElementById('btn-pesquisar');
-    if (btn) { btn.disabled = true; btn.innerHTML = profunda ? '🔬 A pesquisar a fundo… <small>pode levar um minuto</small>' : '🌐 A pesquisar… <small>pode levar um minuto</small>'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = profunda ? '🔬 A fazer a pesquisa avançada… <small>pode levar um minuto</small>' : '🔎 A pesquisar com IA… <small>pode levar um minuto</small>'; }
     try {
         const pedido = { nome: v.nome, produtor: v.produtor || '', ano: v.ano || null, tipo: v.tipo || '' };
         if (profunda) pedido.profunda = true;
         const r = await edgeFn('prendas-vinho', pedido, 110000);
         if (!_form) return;
         if (!r.encontrado) {
-            _procuraRelatorio = `<div class="relatorio">🌐 A pesquisa não encontrou este vinho${r.aviso ? ': ' + esc(r.aviso) : '.'} Confirma o nome e o produtor.${_memoriaHTML(r)}</div>`;
+            _procuraRelatorio = `<div class="relatorio">${profunda ? '🔬 A pesquisa avançada' : '🔎 A pesquisa com IA'} não encontrou este vinho${r.aviso ? ': ' + esc(r.aviso) : '.'} Confirma o nome e o produtor, ou preenche à mão.</div>${_memoriaHTML(r, profunda)}`;
         } else {
             if (profunda && r.pesquisaWeb) {
                 _pesqMemoria.forEach(k => {
@@ -1127,10 +1130,12 @@ async function pesquisarVinhoInternet(profunda) {
                 _form.vinho.origem = _form.vinho.origem === 'catalogo' ? 'catalogo' : 'pesquisa';
                 _form.vinho.fontes = r.fontes || [];
             }
-            _procuraRelatorio = `<div class="relatorio ok">🌐 ${entrou.length ? 'Preenchi: ' + entrou.join(', ') + '.' : 'Nada de novo para os campos vazios.'}${r.aviso ? `<br><small>⚠️ ${esc(r.aviso)}</small>` : ''}${(r.fontes || []).length ? '' : '<br><small>Sem fontes citadas — confirma antes de acreditar.</small>'}${_memoriaHTML(r)}</div>`;
+            const quem = profunda ? '🔬 A pesquisa avançada' : '🔎 A pesquisa com IA';
+            _procuraRelatorio = `<div class="relatorio ok">${quem} terminou e ${entrou.length ? `preencheu mais ${entrou.length} ${entrou.length === 1 ? 'campo' : 'campos'}: ${esc(entrou.join(', '))}.` : 'não preencheu nada de novo.'}${r.aviso ? `<br><small>⚠️ ${esc(r.aviso)}</small>` : ''}${(r.fontes || []).length ? '' : '<br><small>Sem fontes citadas — confirma antes de acreditar.</small>'}</div>${_memoriaHTML(r, profunda)}`;
         }
     } catch (e) {
-        _procuraRelatorio = `<div class="relatorio erro">🌐 ${esc(e.name === 'AbortError' ? 'A pesquisa demorou demasiado — tenta outra vez.' : e.message)}</div>`;
+        _procuraRelatorio = `<div class="relatorio erro">${profunda ? '🔬' : '🔎'} ${esc(e.name === 'AbortError' ? 'A pesquisa demorou demasiado — tenta outra vez.' : e.message)}</div>
+          <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(${profunda ? 'true' : ''})">${profunda ? '🔬 Tentar outra vez a pesquisa avançada' : '🔎 Tentar outra vez'}</button>`;
     }
     redesenharFolha();
 }
