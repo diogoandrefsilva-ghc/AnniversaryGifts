@@ -1036,7 +1036,7 @@ const MAPA_CATALOGO = {
     notas_prova: 'notas_prova', harmonizacao: 'harmonizacao', ai_resumo: 'resumo'
 };
 const ROTULOS = {
-    produtor: 'produtor', tipo: 'cor', regiao: 'região', pais: 'país', castas: 'castas', teor: 'álcool', estagio: 'estágio',
+    produtor: 'produtor', ano: 'colheita', tipo: 'cor', regiao: 'região', pais: 'país', castas: 'castas', teor: 'álcool', estagio: 'estágio',
     vivino_nota: 'nota Vivino', vivino_url: 'link Vivino', imagem_url: 'fotografia', preco_medio: 'preço de mercado',
     notas_prova: 'notas de prova', harmonizacao: 'harmonização', resumo: 'resumo'
 };
@@ -1052,41 +1052,92 @@ function _preencherVazios(ficha) {
     });
     return entrou;
 }
+/* PROCURAR, POR ETAPAS (27/09/2026, o mesmo desenho da Garrafeira):
+   1. o CATÁLOGO mostra os candidatos em lista (`winecatalog.colheitas`:
+      todas as colheitas do vinho, com a cor tirada dos dois lados e o
+      produtor como um "contém") — nome, ano, produtor, castas;
+   2. escolhe-se um (a ficha dele enche os campos VAZIOS) ou "Nenhum destes";
+   3. a IA — uma procura só (o admin faz, na Edge Function, o Serper e depois
+      o grounding pelo que faltar; os outros só o grounding). */
+let _candidatos = [];
 async function procurarVinho() {
     lerForm();
     const v = _form.vinho;
     if (!v.nome) { toast('Escreve primeiro o nome do vinho', false); return; }
     const btn = document.getElementById('btn-procurar');
     btn.disabled = true; btn.textContent = '📚 A perguntar ao catálogo…';
+    let lista = null;
+    try {
+        lista = await rpc('colheitas', { p_nome: v.nome, p_produtor: v.produtor || '', p_tipo: v.tipo || null }, 'winecatalog');
+    } catch (e) {
+        _procuraRelatorio = `<div class="relatorio">📚 Não consegui perguntar ao catálogo (${esc(e.message)}).</div>` + _perguntaIA(false);
+        redesenharFolha(); return;
+    }
+    // O catálogo ainda não separa a cor na chave: com a cor escolhida, um
+    // candidato de outra cor é outro vinho.
+    const todos = Array.isArray(lista) ? lista : [];
+    _candidatos = todos.filter(c => !v.tipo || !c.tipo || String(c.tipo).toLowerCase() === String(v.tipo).toLowerCase())
+        .sort((x, y) => (y.ano === v.ano) - (x.ano === v.ano));
+    if (!_candidatos.length) {
+        _procuraRelatorio = (todos.length
+            ? `<div class="relatorio">📚 O catálogo tem um <b>${esc(todos[0].nome)}</b>, mas <b>${esc(todos[0].tipo)}</b> — e esta garrafa é <b>${esc(v.tipo)}</b>. Deve ser outro vinho.</div>`
+            : `<div class="relatorio">📚 O vinho não existe no Catálogo.</div>`) + _perguntaIA(false);
+        redesenharFolha(); return;
+    }
+    _procuraRelatorio = `<div class="relatorio">📚 ${_candidatos.length === 1 ? 'Encontrei este vinho no Catálogo. É o teu?' : `Encontrei ${_candidatos.length} vinhos no Catálogo. Qual é o teu?`}</div>
+      <div class="lista">${_candidatos.map((c, i) => {
+        const castas = Array.isArray(c.castas) ? c.castas.join(', ') : (c.castas || '');
+        const igual = v.ano && c.ano === v.ano;
+        return `<button class="cartao cand${igual ? ' on' : ''}" onclick="escolherCandidato(${i})">
+          <b>${esc(c.nome)}${c.ano ? ' ' + c.ano : ''}</b>
+          <small>${[c.produtor, castas || 'castas por saber', c.regiao].filter(Boolean).map(esc).join(' · ')}${igual ? ' · a tua colheita' : ''}</small></button>`;
+      }).join('')}</div>
+      <button class="btn ghost largo" onclick="nenhumCandidato()">Nenhum destes</button>`;
+    redesenharFolha();
+}
+function _perguntaIA(complementar) {
+    return `<p class="f-texto"><b>${complementar ? 'Queres usar a IA para complementar a pesquisa, ou preencher à mão os campos abaixo?' : 'Queres fazer a pesquisa com IA, ou preencher à mão os campos abaixo?'}</b></p>
+      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet()">🔎 Pesquisar com IA <small>(~30 s)</small></button>`;
+}
+function nenhumCandidato() {
+    _candidatos = [];
+    _procuraRelatorio = `<div class="relatorio">📚 Nenhum dos vinhos do Catálogo é este.</div>` + _perguntaIA(false);
+    redesenharFolha();
+}
+async function escolherCandidato(i) {
+    lerForm();
+    const v = _form.vinho, c = _candidatos[i];
+    if (!c) return;
     let doCatalogo = [];
     try {
-        const r = await rpc('comparar', { p_nome: v.nome, p_produtor: v.produtor || '', p_ano: v.ano || null, p_ficha: {} }, 'winecatalog');
-        // O catálogo ainda não separa a cor na chave (é a "mudança da cor na
-        // chave", decidida e por fazer na WineCatalog): pedir "Papa Figos"
-        // pode trazer o tinto quando a garrafa é o branco. Com a cor escolhida
-        // e diferente da do catálogo, não se copia nada — é outro vinho.
-        const corCat = r && r.encontrado ? ((r.campos || []).find(c => c.campo === 'tipo') || {}).catalogo : null;
-        if (r && r.encontrado && v.tipo && corCat && String(corCat).toLowerCase() !== String(v.tipo).toLowerCase()) {
-            _procuraRelatorio = `<div class="relatorio">📚 O catálogo tem um <b>${esc(r.nome)}</b>, mas <b>${esc(corCat)}</b> — e esta garrafa é <b>${esc(v.tipo)}</b>. Não copiei nada: deve ser outro vinho.</div>`;
-        } else if (r && r.encontrado) {
+        // O nome, o produtor e o ano DA LINHA escolhida: é assim que a
+        // `comparar` devolve essa e não outra.
+        const r = await rpc('comparar', { p_nome: c.nome, p_produtor: c.produtor || '', p_ano: c.ano ?? null, p_ficha: {} }, 'winecatalog');
+        if (r && r.encontrado) {
+            const outraColheita = v.ano && r.ano && r.ano !== v.ano;
+            const soDaColheita = ['vivino_nota', 'vivino_url', 'preco_medio', 'imagem_url'];
             const ficha = {};
-            (r.campos || []).forEach(c => { const k = MAPA_CATALOGO[c.campo]; if (k) ficha[k] = c.catalogo; });
+            (r.campos || []).forEach(x => {
+                const k = MAPA_CATALOGO[x.campo];
+                if (!k || x.campo === 'tipo') return;
+                if (outraColheita && soDaColheita.includes(k)) return;
+                ficha[k] = x.catalogo;
+            });
             if (!v.produtor && r.produtor) ficha.produtor = r.produtor;
+            if (!v.ano && r.ano) ficha.ano = r.ano;
             doCatalogo = _preencherVazios(ficha);
             _form.vinho.catalogo_id = r.id;
             if (doCatalogo.length) _form.vinho.origem = 'catalogo';
             _procuraRelatorio = `<div class="relatorio ok">📚 ${doCatalogo.length
-                ? `O vinho já existe no Catálogo e a informação foi importada: ${esc(doCatalogo.join(', '))}.`
-                : 'O vinho já existe no Catálogo, mas não tinha nada para os campos vazios.'}<br><small>${esc(r.nome)}${r.ano ? ' ' + r.ano : ''}${r.produtor ? ' · ' + esc(r.produtor) : ''}${r.mesmaColheita === false && v.ano ? ' — outra colheita: os dados estáveis servem, a nota pode não servir' : ''}</small></div>`;
+                ? `A informação do Catálogo foi importada: ${esc(doCatalogo.join(', '))}.`
+                : 'O Catálogo não tinha nada para os campos vazios.'}<br><small>${esc(r.nome)}${r.ano ? ' ' + r.ano : ''}${r.produtor ? ' · ' + esc(r.produtor) : ''}${outraColheita ? ' — outra colheita: vieram só os dados do vinho, sem nota nem preço' : ''}</small></div>`;
         } else {
-            _procuraRelatorio = `<div class="relatorio">📚 O vinho não existe no Catálogo.</div>`;
+            _procuraRelatorio = `<div class="relatorio">📚 O catálogo não devolveu a ficha deste vinho.</div>`;
         }
     } catch (e) {
         _procuraRelatorio = `<div class="relatorio">📚 Não consegui perguntar ao catálogo (${esc(e.message)}).</div>`;
     }
-    // Etapa seguinte: a IA, ou à mão (os campos estão logo abaixo).
-    _procuraRelatorio += `<p class="f-texto"><b>${doCatalogo.length ? 'Queres usar a IA para complementar a pesquisa, ou preencher à mão os campos abaixo?' : 'Queres fazer a pesquisa com IA, ou preencher à mão os campos abaixo?'}</b></p>
-      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet()">🔎 Pesquisar com IA <small>(~30 s)</small></button>`;
+    _procuraRelatorio += _perguntaIA(doCatalogo.length > 0);
     redesenharFolha();
 }
 /* DE MEMÓRIA OU PESQUISADO (só o admin vê). O Gemini decide sozinho se
@@ -1097,12 +1148,10 @@ async function procurarVinho() {
    profunda confirmar SUBSTITUI o que a de memória tinha preenchido — e só
    isso (`_pesqMemoria`): o que alguém escreveu à mão nunca se toca. */
 let _pesqMemoria = [];
-function _memoriaHTML(r, profunda) {
-    let h = r && r.pesquisaWeb === false ? '<p class="f-texto"><small>🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net — confere antes de gravar.</small></p>' : '';
-    // Etapa 3: a pesquisa avançada (a profunda — a função só a dá ao admin).
-    if (AC.admin && !profunda) h += `<p class="f-texto"><b>Pretendes fazer a pesquisa avançada?</b> <small>Pesquisa mesmo no Google (o Vivino incluído) e a IA só lê o que se encontrou.</small></p>
-      <button class="btn ghost largo" id="btn-pesquisar" onclick="pesquisarVinhoInternet(true)">🔬 Pesquisa avançada <small>(~1 min)</small></button>`;
-    return h;
+function _memoriaHTML(r) {
+    // Uma procura só: quem tem o pacote completo já fez o Serper e o
+    // grounding de seguida, na Edge Function. Aqui só se diz se foi de memória.
+    return r && r.pesquisaWeb === false ? '<p class="f-texto"><small>🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net — confere antes de gravar.</small></p>' : '';
 }
 async function pesquisarVinhoInternet(profunda) {
     lerForm();

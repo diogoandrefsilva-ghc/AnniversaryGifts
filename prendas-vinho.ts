@@ -308,84 +308,111 @@ Deno.serve(async (req) => {
   // Figos" tinto do branco. Só entra no prompt se for uma das cores conhecidas.
   const tipoPedido = TIPOS.find((x) => x.toLowerCase() === texto(corpo.tipo, 20).toLowerCase()) ?? "";
   if (!nome) return json({ error: "falta o nome do vinho" }, 400);
-  const profunda = corpo.profunda === true;
-  if (profunda && !acesso.admin) return json({ error: "a pesquisa profunda é só para o admin" }, 403);
+  /* OS DOIS PACOTES (27/09/2026, o dono das apps): o admin tem o COMPLETO
+     — primeiro a pesquisa NOSSA (Serper, e o Gemini só a ler) e depois o
+     grounding só pelo que ela não trouxe, tudo de seguida; os outros fazem
+     só o grounding. O `profunda` que uma app em cache ainda mande já não
+     muda nada: é o pacote de quem pede que decide. */
+  const completo = acesso.admin === true && !!SEARCH_API_KEY;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let modelo = "";
   try {
-    // Profunda: a pesquisa faz-se AQUI, antes do Gemini (ver `pesquisarSerper`).
     let evidencia = "";
     let fontesSerper: { titulo: string; url: string }[] = [];
-    const serperConsultas = profunda ? 2 : 0;
-    if (profunda) {
+    let serperConsultas = 0;
+    if (completo) {
       const q = [nome, produtor, ano].filter(Boolean).join(" ");
       try {
         const r = await pesquisarSerper([`${q} vinho preço`, `"${nome.replace(/"/g, "")}" ${produtor} site:vivino.com`.replace(/\s+/g, " ")], ctrl.signal);
+        serperConsultas = 2;
         evidencia = r.texto;
         fontesSerper = r.fontes;
       } catch (e) {
         if (ctrl.signal.aborted) throw e;
-        await registarIaUso("erro", { passo: "serper", profunda: true, erro: String((e as Error).message).slice(0, 300), ms: Date.now() - t0, nome }, quem);
-        return json({ error: `a pesquisa Google não respondeu (${(e as Error).message}) — tenta outra vez` }, 503);
-      }
-      if (!evidencia) {
-        await registarIaUso("ok", { passo: "serper_vazio", profunda: true, serper_consultas: serperConsultas, custo_estimado_eur: serperConsultas * CUSTO_SERPER_EUR, ms: Date.now() - t0, nome }, quem);
-        return json({ error: "a pesquisa Google não encontrou nada sobre este vinho — confirma o nome e o produtor" }, 404);
+        // Sem o Serper não se desiste: segue só o grounding.
+        await registarIaUso("erro", { passo: "serper", erro: String((e as Error).message).slice(0, 300), ms: Date.now() - t0, nome }, quem);
       }
     }
     const lista = await candidatos(ctrl.signal);
-    const textoPedido = prompt(nome, produtor, ano, tipoPedido, evidencia);
-    const custo = profunda ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR : CUSTO_PESQUISA_EUR;
-    const serperLog = profunda ? { pesquisa_externa: "serper", serper_consultas: serperConsultas } : {};
     let vazioMotivo = "";
     let ultimoErro = "";
     let usage: any = null;
-    const responder = async (gd: any, bruto: string, motivo: string) => {
-      const parsed = extrairJson(bruto);
-      if (!parsed) {
-        await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, ...serperLog, nome }, quem);
-        return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
+    // Uma pergunta ao Gemini, modelo a modelo; o corpo lê-se DENTRO do ciclo
+    // e um 200 vazio passa ao modelo seguinte.
+    const perguntar = async (textoPedido: string, comGround: boolean) => {
+      for (const m of lista) {
+        if (ctrl.signal.aborted) break;
+        modelo = m;
+        const g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: textoPedido }] }],
+            ...(comGround
+              ? { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }
+              : { generationConfig: { temperature: 0, responseMimeType: "application/json" } }),
+          }),
+        });
+        if (!g.ok) {
+          ultimoErro = `gemini ${g.status} (${m})`;
+          if (g.status === 404) { _models = null; continue; }
+          if (g.status === 429 || g.status >= 500) continue;
+          break;
+        }
+        const gd = await g.json();
+        const cand = gd?.candidates?.[0];
+        const motivo = String(cand?.finishReason ?? "");
+        const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+        usage = gd?.usageMetadata ?? usage;
+        if (!bruto) { vazioMotivo = motivo || "resposta vazia"; continue; }
+        return { gd, bruto, motivo };
       }
-      const ficha = normalizar(parsed);
-      // Na profunda, a pesquisa foi nossa: as fontes são as do Serper, e houve pesquisa.
-      const fontes = profunda ? fontesSerper : fontesGrounding(gd);
-      const pesquisaWeb = profunda ? true : fezPesquisa(gd);
-      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, pesquisaWeb, ...(profunda ? { profunda: true } : {}), ...serperLog, finishReason: motivo, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, nome }, quem);
+      return null;
+    };
+
+    let parsed: any = null, ficha: Record<string, unknown> = {}, motivoFinal = "";
+    let fontes: { titulo: string; url: string }[] = [];
+    let pesquisaWeb = false, usouGround = false, ilegivel = false;
+    if (evidencia) {
+      const r = await perguntar(prompt(nome, produtor, ano, tipoPedido, evidencia), false);
+      if (r) {
+        parsed = extrairJson(r.bruto);
+        if (parsed) { ficha = normalizar(parsed); fontes = fontesSerper; pesquisaWeb = true; motivoFinal = r.motivo; }
+        else ilegivel = true;
+      }
+    }
+    // O grounding: pelo que o Serper não trouxe, ou por tudo sem ele.
+    const importantes = ["castas", "regiao", "teor", "vivino_nota", "vivino_url", "imagem_url", "preco_medio", "notas_prova", "harmonizacao"];
+    const vazioV = (x: unknown) => x == null || x === "" || (Array.isArray(x) && !x.length);
+    if (!parsed || importantes.some((k) => vazioV(ficha[k]))) {
+      usouGround = true;
+      const r2 = await perguntar(prompt(nome, produtor, ano, tipoPedido, ""), true);
+      if (r2) {
+        const p2 = extrairJson(r2.bruto);
+        if (p2) {
+          const f2 = normalizar(p2);
+          // O Serper ganha: o grounding só tapa o que ele deixou vazio.
+          ficha = { ...f2, ...Object.fromEntries(Object.entries(ficha).filter(([, v]) => !vazioV(v))) };
+          fontes = [...fontes, ...fontesGrounding(r2.gd)].filter((f, i, arr) => arr.findIndex((x) => x.url === f.url) === i);
+          if (!parsed) { pesquisaWeb = fezPesquisa(r2.gd); parsed = p2; motivoFinal = r2.motivo; }
+        } else if (!parsed) ilegivel = true;
+      }
+    }
+    const custo = (serperConsultas ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR : 0) + (usouGround ? CUSTO_PESQUISA_EUR : 0);
+    const serperLog = serperConsultas ? { pesquisa_externa: usouGround ? "serper+grounding" : "serper", serper_consultas: serperConsultas } : {};
+    if (parsed) {
+      await registarIaUso("ok", { passo: "ok", modelo, campos: Object.keys(ficha).length, fontes: fontes.length, pesquisaWeb, ...serperLog, finishReason: motivoFinal, usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, nome }, quem);
       return json({
         encontrado: parsed.encontrado !== false && Object.keys(ficha).length > 0,
-        ficha, fontes, aviso: texto(parsed.aviso, 300), modelo, pesquisaWeb, profunda,
+        ficha, fontes, aviso: texto(parsed.aviso, 300), modelo, pesquisaWeb, profunda: serperConsultas > 0,
       });
-    };
-    for (const m of lista) {
-      if (ctrl.signal.aborted) break;
-      modelo = m;
-      // Na profunda a pesquisa já foi feita (Serper): sem tool, e JSON direto.
-      const g = await fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: textoPedido }] }],
-          ...(profunda
-            ? { generationConfig: { temperature: 0, responseMimeType: "application/json" } }
-            : { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }),
-        }),
-      });
-      if (!g.ok) {
-        ultimoErro = `gemini ${g.status} (${m})`;
-        if (g.status === 404) { _models = null; continue; }
-        if (g.status === 429 || g.status >= 500) continue;
-        break;
-      }
-      const gd = await g.json();
-      const cand = gd?.candidates?.[0];
-      const motivo = String(cand?.finishReason ?? "");
-      const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
-      usage = gd?.usageMetadata ?? usage;
-      if (!bruto) { vazioMotivo = motivo || "resposta vazia"; continue; } // 200 vazio → modelo seguinte
-      return await responder(gd, bruto, motivo);
+    }
+    if (ilegivel) {
+      await registarIaUso("erro", { passo: "json", modelo, erro: "resposta ilegível", usageMetadata: usage, ms: Date.now() - t0, custo_estimado_eur: custo, ...serperLog, nome }, quem);
+      return json({ error: "o modelo respondeu mas não percebi a resposta — tenta outra vez" }, 502);
     }
     // Nenhum escreveu nada: é ERRO, e diz-se porquê.
     const erro = vazioMotivo

@@ -97,13 +97,17 @@ catalogo_id`.
 - **Nenhum dos dois escreve por cima do que já está no formulário** — só
   preenche vazios. Quem tem a garrafa na mão sabe melhor.
 - **O ecrã fala por etapas, com as mesmas palavras da Garrafeira**
-  (26/09/2026): "O vinho já existe no Catálogo e a informação foi
-  importada: …" / "O vinho não existe no Catálogo." → "Queres usar a IA
-  para complementar a pesquisa, ou preencher à mão?" → "A pesquisa com IA
-  terminou e preencheu mais N campos." → ao admin, "Pretendes fazer a
-  pesquisa avançada?" (a profunda). O botão da IA aparece sempre, e não só
-  quando o catálogo trouxe pouco. Os sites de referência da avançada da
-  Garrafeira ainda não existem aqui: a `prendas-vinho` não os recebe.
+  (26/09/2026, revisto a 27/09): "Procurar" mostra primeiro os CANDIDATOS do
+  catálogo em lista (`winecatalog.colheitas`: todas as colheitas, a cor
+  tirada dos dois lados, o produtor como um "contém"), com nome, ano,
+  produtor, castas e região; o da colheita escrita vem marcado. Escolhe-se
+  um (`escolherCandidato`: a `comparar` com o nome e o ano dessa linha
+  enche os vazios; de outra colheita, sem nota nem preço) ou "Nenhum
+  destes". Depois: "Queres usar a IA…?" → uma procura só: o admin (pacote
+  completo) faz na `prendas-vinho`, de seguida, o Serper e depois o
+  grounding pelo que faltar; os outros só o grounding. Já não há botão de
+  pesquisa profunda — está dentro da procura do admin. Os sites de
+  referência ainda não existem aqui.
 - **A COR escolhe-se ANTES da procura** (o produtor vem depois, e a procura
   preenche-o): quem tem a garrafa sabe sempre a cor, e é ela que separa o
   "Papa Figos" tinto do branco. A `prendas-vinho` recebe-a no prompt como

@@ -395,3 +395,9 @@ details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color
 .push-folha { text-align: center; }
 .push-folha .pf-ic { font-size: 52px; margin: 4px 0 6px; }
 .push-folha .f-acoes { justify-content: center; }
+
+/* Os candidatos do catálogo na procura do vinho (`procurarVinho`): um cartão
+   por vinho, e o da colheita escrita marcado. */
+.cartao.cand { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer; font: inherit; color: inherit; margin-bottom: 8px; }
+.cartao.cand small { color: var(--mu); }
+.cartao.cand.on { outline: 2px solid var(--pri); }
