@@ -111,9 +111,10 @@ catalogo_id`.
 - **A COR escolhe-se ANTES da procura** (o produtor vem depois, e a procura
   preenche-o): quem tem a garrafa sabe sempre a cor, e é ela que separa o
   "Papa Figos" tinto do branco. A `prendas-vinho` recebe-a no prompt como
-  dado seguro. O catálogo ainda NÃO tem a cor na chave (é "a mudança da cor
-  na chave", decidida e por fazer na WineCatalog), por isso a app confere
-  à mão: se o catálogo devolver outra cor, **não copia nada** e diz porquê.
+  dado seguro. O catálogo tem a cor na chave desde 27/09/2026 (a `colheitas`
+  já só devolve a mesma cor ou nenhuma), e a app confere-a na mesma: se o
+  catálogo devolver outra cor, **não copia nada** e diz porquê — e o trigger
+  que leva a prenda ao catálogo também não usa uma ligação de outra cor.
 - **A ficha é uma CÓPIA, e não se atualiza sozinha.** O que muda depois no
   catálogo (uma imagem nova, uma nota) só chega à prenda pelo botão
   **"🔄 Atualizar do catálogo"** da ficha (quem gere a prenda): a
