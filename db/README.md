@@ -2,7 +2,13 @@
 
 Mesmo projeto Supabase das outras apps.
 
-1. Correr `schema.sql` no SQL Editor (idempotente).
+1. Correr `schema.sql` no SQL Editor (idempotente). **A secção "O VINHO VAI
+   PARA O CATÁLOGO"** (o trigger que leva o vinho de cada prenda ao catálogo)
+   precisa ANTES da `forca()` do `db/catalogo.sql` e da `quem_escreve()` do
+   `db/historico.sql` do repo **WineCatalog** com a origem `prenda` (desde
+   29/09/2026) — sem elas a força é 0 e a `juntar` não escreve nada. E do
+   `pg_cron` (já ligado no projeto: é o que corre a `catalogar_pendentes`
+   uma vez por dia).
 2. Correr `seed-amigos.sql` uma vez (copia nomes+emails de
    `splitbill.amigo_users`; as datas de anos metem-se na app).
 3. **Settings → API → Exposed schemas**: acrescentar `anniversarygifts`.

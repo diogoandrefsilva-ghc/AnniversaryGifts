@@ -638,3 +638,227 @@ $$;
 
 REVOKE ALL ON FUNCTION anniversarygifts.registar_entrada(), anniversarygifts.estado_amigos() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION anniversarygifts.registar_entrada(), anniversarygifts.estado_amigos() TO authenticated, service_role;
+
+
+-- =====================================================================
+-- O VINHO VAI PARA O CATÁLOGO (29/09/2026, o dono: "os vinhos pesquisados/
+-- gravados na AnniversaryGifts não estão a ficar no Catálogo — quero que
+-- fiquem").
+-- Até aqui a app só LIA o catálogo (a `comparar`/`colheitas` do Procurar),
+-- e o que a pesquisa com IA de uma prenda trazia ficava só na prenda: a
+-- próxima pessoa a procurar o mesmo vinho — aqui, na Garrafeira ou numa
+-- carta da WineSelection — pagava a mesma pesquisa outra vez.
+--
+-- Como na Garrafeira: um TRIGGER na tabela, não uma chamada em cada porta
+-- (a porta que se esquecesse era um buraco calado), e pela `juntar` do
+-- catálogo, que é a única porta de escrita de lá e decide campo a campo pela
+-- força. A origem é `prenda`, força 1 em tudo (a `forca()` do
+-- db/catalogo.sql do repo WineCatalog, que tem de correr ANTES disto): a
+-- ficha de uma prenda veio quase sempre do próprio catálogo ou de uma
+-- pesquisa com IA de memória — enche o que o catálogo não tem e perde para
+-- qualquer coisa a sério. O histórico de lá diz "uma prenda de anos", nunca
+-- quem a gravou.
+--
+-- Três regras:
+--   · SÓ DEPOIS DA SURPRESA. Uma prenda por entregar cujo dia ainda não
+--     passou não vai ao catálogo: o admin do catálogo também faz anos, e ver
+--     um vinho novo aparecer lá dias antes era ver a prenda. Fica pendente
+--     (`catalogado_em` a NULL) e vai quando for entregue — ou, se ninguém a
+--     marcar, no dia a seguir aos anos (a `catalogar_pendentes`, pelo
+--     pg_cron, uma vez por dia).
+--   · SÓ O QUE É DO VINHO (invariante 1 do catálogo): a loja onde se
+--     comprou, o preço pago e as notas da prenda nunca entram.
+--   · A LIGAÇÃO. `vinho.catalogo_id` (o candidato escolhido no Procurar)
+--     manda: escreve-se NA linha ligada, com o nome e o produtor dela — um
+--     nome escrito de outra maneira não faz nascer outra linha. Noutra
+--     colheita, é a mesma casa com a colheita da prenda, e sem o que é da
+--     colheita (nota, preço, link, imagem, que vieram da outra). Mudado o
+--     nome, o produtor, o ano ou a cor de uma prenda ligada, a ligação era
+--     de outro vinho: sai, e procura-se pelo nome. No fim fica o id da linha
+--     em `vinho.catalogo_id` (é o que as marcas 🎁 da WineSelection também
+--     usam).
+-- Nunca deita a gravação abaixo: um erro aqui fica um WARNING no log do
+-- Postgres e a prenda grava na mesma (e fica pendente, para o dia seguinte).
+-- =====================================================================
+ALTER TABLE anniversarygifts.eventos ADD COLUMN IF NOT EXISTS catalogado_em timestamptz;
+
+-- A ficha de uma prenda (os nomes desta app) → a do catálogo, e a `juntar`.
+-- Devolve o id da linha do catálogo (NULL sem nome, ou se a juntar recusar).
+CREATE OR REPLACE FUNCTION anniversarygifts.catalogar_vinho(p_vinho jsonb)
+  RETURNS bigint
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = anniversarygifts, winecatalog, public
+AS $$
+DECLARE
+  v_nome   text := btrim(coalesce(p_vinho ->> 'nome', ''));
+  -- "Esteban & Tavares (Susana Esteban e Sandra Tavares da Silva)": o
+  -- parêntesis é uma nota de quem escreveu, não outro produtor (a lição do
+  -- catálogo — tira-se do PRODUTOR, nunca do NOME).
+  v_prod   text := btrim(regexp_replace(coalesce(p_vinho ->> 'produtor', ''), '\s*\([^)]*\)', '', 'g'));
+  v_tipo   text := nullif(btrim(coalesce(p_vinho ->> 'tipo', '')), '');
+  v_ano    integer;
+  v_link   bigint;
+  c        winecatalog.vinhos%ROWTYPE;
+  v_ficha  jsonb;
+  v_castas jsonb;
+  v_url    text;
+  m        text[];
+  v_img    text := btrim(coalesce(p_vinho ->> 'imagem_url', ''));
+  v_fontes jsonb;
+  v_quem   text := current_setting('winecatalog.quem', true);
+  v_id     bigint;
+  k        text;
+BEGIN
+  IF v_nome = '' OR jsonb_typeof(p_vinho) <> 'object' THEN RETURN NULL; END IF;
+  IF coalesce(p_vinho ->> 'ano', '') ~ '^\d{4}$' THEN v_ano := (p_vinho ->> 'ano')::integer; END IF;
+  IF coalesce(p_vinho ->> 'catalogo_id', '') ~ '^\d+$' THEN v_link := (p_vinho ->> 'catalogo_id')::bigint; END IF;
+
+  -- Castas: nomes de castas, sem repetidos. "Vinhas Velhas" (o Tricot) ou
+  -- "lote" não são castas.
+  SELECT jsonb_agg(x.casta ORDER BY x.o) INTO v_castas FROM (
+    SELECT DISTINCT ON (lower(btrim(t.casta))) btrim(t.casta) AS casta, t.o
+      FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(p_vinho -> 'castas') = 'array'
+                                          THEN p_vinho -> 'castas' ELSE '[]'::jsonb END) WITH ORDINALITY t(casta, o)
+     WHERE btrim(t.casta) <> ''
+       AND btrim(t.casta) !~* '^(vinhas? velhas?|field blend|blend|lote|mistura|v[áa]rias|diversas|outras|castas?)$'
+     ORDER BY lower(btrim(t.casta)), t.o) x;
+
+  -- O link do Vivino só no formato do Vivino, `/<nome>/w/<nº>`, limpo de
+  -- país e língua — a regra das Edge Functions (`vivinoLink`). O resto
+  -- (`/Wines/…`, `/wines/<nº>`) é o que a IA escreve de memória e não abre.
+  v_url := btrim(coalesce(p_vinho ->> 'vivino_url', ''));
+  m := regexp_match(v_url, '^https?://([a-z0-9-]+\.)*vivino\.com/(.*/)?([a-z0-9-]+)/w/([0-9]+)', 'i');
+  v_url := CASE WHEN m IS NOT NULL THEN 'https://www.vivino.com/' || lower(m[3]) || '/w/' || m[4] END;
+
+  v_ficha := jsonb_strip_nulls(jsonb_build_object(
+    'tipo',          v_tipo,
+    'regiao',        nullif(btrim(coalesce(p_vinho ->> 'regiao', '')), ''),
+    'pais',          nullif(btrim(coalesce(p_vinho ->> 'pais', '')), ''),
+    'castas',        v_castas,
+    'teor',          CASE WHEN jsonb_typeof(p_vinho -> 'teor') = 'number'
+                           AND (p_vinho ->> 'teor')::numeric BETWEEN 4 AND 25 THEN p_vinho -> 'teor' END,
+    'estagio_texto', nullif(btrim(coalesce(p_vinho ->> 'estagio', '')), ''),
+    'vivino_url',    v_url,
+    'imagem_url',    CASE WHEN v_img ~* '^https?://\S+$' AND length(v_img) <= 500 THEN v_img END,
+    'preco_medio',   CASE WHEN jsonb_typeof(p_vinho -> 'preco_medio') = 'number'
+                           AND (p_vinho ->> 'preco_medio')::numeric BETWEEN 0.5 AND 100000 THEN p_vinho -> 'preco_medio' END,
+    'notas_prova',   nullif(btrim(coalesce(p_vinho ->> 'notas_prova', '')), ''),
+    'harmonizacao',  nullif(btrim(coalesce(p_vinho ->> 'harmonizacao', '')), ''),
+    'ai_resumo',     nullif(btrim(coalesce(p_vinho ->> 'resumo', '')), '')
+  ));
+
+  -- A linha ligada, com o `alias` resolvido. Cor diferente = outro vinho.
+  IF v_link IS NOT NULL THEN
+    SELECT w.* INTO c FROM winecatalog.vinhos w
+     WHERE w.id = coalesce((SELECT a.id_para FROM winecatalog.alias a WHERE a.id_de = v_link), v_link);
+    IF c.id IS NOT NULL AND c.cor IS NOT NULL AND winecatalog.cor_de(v_tipo) IS NOT NULL
+       AND c.cor <> winecatalog.cor_de(v_tipo) THEN
+      c := NULL;
+    END IF;
+  END IF;
+
+  IF c.id IS NOT NULL THEN
+    v_nome := c.nome;
+    v_prod := coalesce(nullif(c.produtor, ''), v_prod);
+    IF v_tipo IS NULL AND coalesce(c.ficha ->> 'tipo', '') <> '' THEN
+      v_ficha := v_ficha || jsonb_build_object('tipo', c.ficha ->> 'tipo');
+    END IF;
+    -- Outra colheita (ou a prenda sem ela): só o que é do VINHO — o que é
+    -- da colheita veio, quase sempre, da linha da outra.
+    IF c.ano IS DISTINCT FROM v_ano THEN
+      FOR k IN SELECT jsonb_object_keys(v_ficha) LOOP
+        IF winecatalog.da_colheita(k) THEN v_ficha := v_ficha - k; END IF;
+      END LOOP;
+      v_ano := coalesce(v_ano, c.ano);
+    END IF;
+  ELSIF jsonb_typeof(p_vinho -> 'vivino_nota') = 'number'
+        AND (p_vinho ->> 'vivino_nota')::numeric BETWEEN 1 AND 5 THEN
+    -- A nota do Vivino que a `prendas-vinho` pede é a da PÁGINA do vinho
+    -- ("a página do Vivino é do VINHO, não da colheita"): a de todas as
+    -- colheitas. Numa prenda ligada veio do catálogo, e lá já está.
+    v_ficha := v_ficha || jsonb_build_object('vivino_nota_global', p_vinho -> 'vivino_nota');
+  END IF;
+
+  SELECT coalesce(jsonb_agg(f), '[]'::jsonb) INTO v_fontes
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_vinho -> 'fontes') = 'array'
+                                   THEN p_vinho -> 'fontes' ELSE '[]'::jsonb END) f
+   WHERE jsonb_typeof(f) = 'object' AND coalesce(f ->> 'url', '') ~* '^https?://';
+
+  IF coalesce(v_quem, '') = '' THEN
+    PERFORM set_config('winecatalog.quem', 'uma prenda de anos', true);
+  END IF;
+  v_id := winecatalog.juntar(v_nome, v_prod, v_ano, v_ficha, 'prenda', v_fontes);
+  PERFORM set_config('winecatalog.quem', coalesce(v_quem, ''), true);
+  RETURN v_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION anniversarygifts.eventos_catalogo() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = anniversarygifts, public
+AS $$
+DECLARE
+  v_id bigint;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.vinho IS DISTINCT FROM OLD.vinho THEN
+    -- Outro nome, produtor, ano ou cor com a mesma ligação: a ligação era
+    -- de outro vinho (a Garrafeira faz o mesmo, `p_religar`).
+    IF (NEW.vinho ->> 'catalogo_id') IS NOT DISTINCT FROM (OLD.vinho ->> 'catalogo_id')
+       AND ((NEW.vinho ->> 'nome')     IS DISTINCT FROM (OLD.vinho ->> 'nome')
+         OR (NEW.vinho ->> 'produtor') IS DISTINCT FROM (OLD.vinho ->> 'produtor')
+         OR (NEW.vinho ->> 'ano')      IS DISTINCT FROM (OLD.vinho ->> 'ano')
+         OR (NEW.vinho ->> 'tipo')     IS DISTINCT FROM (OLD.vinho ->> 'tipo')) THEN
+      NEW.vinho := NEW.vinho - 'catalogo_id';
+    END IF;
+    NEW.catalogado_em := NULL;
+  ELSIF TG_OP = 'INSERT' THEN
+    NEW.catalogado_em := NULL;
+  END IF;
+
+  IF NEW.catalogado_em IS NOT NULL
+     OR btrim(coalesce(NEW.vinho ->> 'nome', '')) = ''
+     -- a surpresa: por entregar e o dia ainda não passou
+     OR (NEW.estado <> 'entregue' AND NEW.data >= current_date) THEN
+    RETURN NEW;
+  END IF;
+
+  BEGIN
+    v_id := anniversarygifts.catalogar_vinho(NEW.vinho);
+    IF v_id IS NOT NULL THEN
+      NEW.vinho := NEW.vinho || jsonb_build_object('catalogo_id', v_id);
+    END IF;
+    NEW.catalogado_em := clock_timestamp();
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'anniversarygifts: a prenda % não foi para o catálogo: %', NEW.id, SQLERRM;
+  END;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS eventos_catalogo ON anniversarygifts.eventos;
+CREATE TRIGGER eventos_catalogo BEFORE INSERT OR UPDATE ON anniversarygifts.eventos
+  FOR EACH ROW EXECUTE FUNCTION anniversarygifts.eventos_catalogo();
+
+-- As que ficaram pendentes (a surpresa acabou sem ninguém lhes mexer, ou um
+-- erro): "tocar-lhes" chega — o trigger faz o resto, uma porta só.
+CREATE OR REPLACE FUNCTION anniversarygifts.catalogar_pendentes() RETURNS integer
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = anniversarygifts, public
+AS $$
+DECLARE n integer;
+BEGIN
+  UPDATE anniversarygifts.eventos SET catalogado_em = NULL
+   WHERE catalogado_em IS NULL
+     AND btrim(coalesce(vinho ->> 'nome', '')) <> ''
+     AND (estado = 'entregue' OR data < current_date);
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION anniversarygifts.catalogar_vinho(jsonb), anniversarygifts.eventos_catalogo(),
+  anniversarygifts.catalogar_pendentes() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION anniversarygifts.catalogar_pendentes() TO service_role;
+
+-- Uma vez por dia (o pg_cron já serve a Garrafeira e o Goals neste projeto).
+SELECT cron.schedule('anniversarygifts-catalogo', '17 4 * * *', 'SELECT anniversarygifts.catalogar_pendentes()');

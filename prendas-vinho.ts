@@ -9,8 +9,10 @@
 // quem espera é uma pessoa com o telemóvel na mão, 20–60 s.
 //
 // NÃO ESCREVE NO CATÁLOGO. Só devolve a ficha; quem a grava é a app, na
-// prenda. O catálogo tem dono (a WineCatalog) e regras de força por origem
-// que uma quinta porta de escrita não pode contornar.
+// prenda — e é a PRENDA gravada que vai ao catálogo, pelo trigger
+// `eventos_catalogo` (db/schema.sql, "O VINHO VAI PARA O CATÁLOGO"), com o
+// nome já confirmado por quem tem a garrafa. Escrever daqui era escrever um
+// nome por confirmar (a lição do "Cristo Vinhas Velhas" da Garrafeira).
 //
 // Lições das irmãs, aplicadas à partida (ver CLAUDE.md da WineCatalog):
 //   · só ponteiros "-latest", nunca nomes de versão fixos (os 404);

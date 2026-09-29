@@ -121,9 +121,39 @@ catalogo_id`.
   só o que difere; mostra-se "agora → catálogo" campo a campo e grava-se o
   que for escolhido (`aplicarDoCatalogo`, pela `guardar_evento`). À mão de
   propósito — nada muda sem confirmar.
-- **Esta app NÃO escreve no catálogo.** O catálogo tem dono (WineCatalog) e
-  regras de força por origem; uma porta de escrita nova teria de passar pela
-  `juntar` e pela `forca()` de lá — decisão desse repo, não deste.
+- **O vinho de uma prenda vai para o catálogo** (29/09/2026, o dono: "os
+  vinhos pesquisados/gravados na AnniversaryGifts não estão a ficar no
+  Catálogo — quero que fiquem"). Até aí a app só lia: a pesquisa com IA de
+  uma prenda morria na prenda, e o próximo a procurar o mesmo vinho pagava-a
+  outra vez. Agora um trigger na `eventos` (`eventos_catalogo` →
+  `catalogar_vinho`, `db/schema.sql`, "O VINHO VAI PARA O CATÁLOGO") passa a
+  ficha pela `winecatalog.juntar` — a porta de escrita do catálogo, com a
+  força de lá: origem **`prenda`, força 1 em tudo** (enche o que falta, perde
+  para qualquer coisa a sério), "uma prenda de anos" no histórico, nunca quem
+  gravou. A origem vive na `forca()`/`quem_escreve()` do repo WineCatalog, que
+  tem de correr antes. As regras:
+  · **só depois da surpresa**: uma prenda por entregar cujo dia ainda não
+    passou fica pendente (`catalogado_em` NULL) — o admin do catálogo também
+    faz anos. Vai quando é entregue, ou no dia a seguir aos anos pelo
+    `pg_cron` (`anniversarygifts-catalogo`, 04:17 UTC, `catalogar_pendentes`);
+  · **só o que é do vinho**: a loja, o preço pago e as notas nunca vão; as
+    castas perdem o que não é casta ("Vinhas Velhas"), o link do Vivino só no
+    formato `/<nome>/w/<nº>`, o produtor sem o parêntesis, e a `vivino_nota`
+    entra como a de TODAS as colheitas (é a da página do vinho que a
+    `prendas-vinho` pede);
+  · **a ligação manda**: com `vinho.catalogo_id` escreve-se NA linha ligada,
+    com o nome dela; noutra colheita, é essa casa com a colheita da prenda e
+    sem o que é da colheita; mudado nome/produtor/ano/cor com a mesma
+    ligação, ela sai e procura-se pelo nome; cor diferente nunca serve. No
+    fim o id fica em `vinho.catalogo_id`;
+  · **nunca deita a gravação abaixo**: um erro é um WARNING no log e a prenda
+    fica pendente para o cron.
+  Um vinho só PESQUISADO (sem gravar a prenda) não vai — a lição da
+  Garrafeira: gravar antes de confirmar o nome pôs no catálogo o "Cristo
+  Vinhas Velhas". As 8 prendas que já existiam foram registadas a 29/09/2026
+  por esta mesma porta (5 linhas novas; o "Tapada de Coelheiros" 2020 e o
+  "Chocapalha Vinha Mãe" 2019 nasceram com o nome do vinho, e não o da
+  prenda).
 - **De memória ou pesquisado (24/09/2026).** Ligar o `google_search` não
   obriga o modelo a pesquisar, e nos registos das apps nunca o fez:
   respondeu de memória. Para toda a gente fica assim; a resposta leva
