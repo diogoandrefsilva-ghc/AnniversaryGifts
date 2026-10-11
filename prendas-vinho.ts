@@ -265,9 +265,18 @@ async function registarIaUso(estado: string, detalhe: Record<string, unknown>, q
       },
       body: JSON.stringify({
         app: "anniversarygifts", funcao: "prendas-vinho",
+        // Uma funcionalidade só: a ficha do vinho da prenda. O painel de custos
+        // (AI-API-Control) conta o custo médio por funcionalidade.
+        funcionalidade: "prendas",
         estado: estado === "erro" ? "erro" : "ok",
         modelo: (detalhe.modelo as string) ?? null,
-        pesquisa_web: true,
+        // O que a chamada SABE, e não um `true`
+        // fixo: com ele, uma resposta de memória — ou o Serper que falhou antes
+        // de haver Gemini — pagava a pesquisa Google no euro medido. Sem saber,
+        // vale a regra da `ia_uso.funcoes` (só para quem chegou ao Gemini).
+        // Só o Serper (sem grounding) não é pesquisa Google faturada.
+        pesquisa_web: detalhe.pesquisa_externa === "serper" ? false
+          : typeof detalhe.pesquisaWeb === "boolean" ? detalhe.pesquisaWeb : null,
         tokens_entrada: u?.promptTokenCount ?? null,
         tokens_saida: u?.candidatesTokenCount ?? null,
         tokens_pensamento: u?.thoughtsTokenCount ?? null,

@@ -175,7 +175,7 @@ catalogo_id`.
   nunca "não encontrei"; regista cada chamada em `ia_uso.registos`
   (`app: "anniversarygifts"`) num try/catch que engole tudo — e está
   registada em `ia_uso.funcoes` (`grounding = true`), que é de onde a app
-  dos custos tira a regra de faturação da pesquisa. **Função nova que chame
+  dos custos tira a regra de faturação da pesquisa. Cada linha grava também a `funcionalidade` (`prendas`) e o `pesquisa_web` que a chamada SABE (nunca um `true` fixo) — é o contrato do `db/README.md` da AI-API-Control, igual em todas as apps; o SQL de lá corre antes do deploy, senão a coluna nova é recusada e a linha perde-se em silêncio. **Função nova que chame
   o Gemini = linha nova em `ia_uso.funcoes`**, senão o custo sai errado. **Se mexeres na
   escolha de modelo aqui, vai ver as outras no mesmo dia.**
 
