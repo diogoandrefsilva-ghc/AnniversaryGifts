@@ -22,8 +22,19 @@
   --dg-bg: #fdeaea;
   --espera: #a86b00;
   --espera-bg: #fff1cf;
+  /* Os tons que entram em sombras, véus e fundos translúcidos (r, g, b) e
+     o resto da paleta: trocar de cores é trocar este bloco, mais nada. */
+  --tinta: 46, 36, 119;
+  --escuro: 20, 10, 60;
+  --bg-rgb: 245, 244, 251;
+  --campo: #fbfbfe;
+  --pega: #d6d3e8;
+  --calma-a: #7d77a3;
+  --calma-b: #9d97c4;
+  --anos-a: var(--pri-dk);
+  --anos-b: var(--pri);
   --raio: 20px;
-  --sombra: 0 1px 2px rgba(46, 36, 119, .05), 0 6px 20px rgba(46, 36, 119, .07);
+  --sombra: 0 1px 2px rgba(var(--tinta), .05), 0 6px 20px rgba(var(--tinta), .07);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -50,7 +61,7 @@ small { color: var(--mu); }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   color: #fff; transition: opacity .28s ease;
 }
-.pg-splash-logo { width: 104px; height: 104px; object-fit: contain; filter: drop-shadow(0 10px 22px rgba(20, 10, 60, .45)); }
+.pg-splash-logo { width: 104px; height: 104px; object-fit: contain; filter: drop-shadow(0 10px 22px rgba(var(--escuro), .45)); }
 .pg-splash-title { font-size: 24px; font-weight: 800; letter-spacing: .2px; }
 .pg-spin { width: 26px; height: 26px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: pg-spin .8s linear infinite; }
 @keyframes pg-spin { to { transform: rotate(360deg); } }
@@ -62,16 +73,16 @@ small { color: var(--mu); }
   background: linear-gradient(150deg, var(--pri-dk), var(--pri) 60%, var(--coral));
 }
 .auth-emoji { font-size: 46px; margin-bottom: 6px; }
-.auth-logo { width: 84px; height: 84px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 8px 18px rgba(20, 10, 60, .4)); }
+.auth-logo { width: 84px; height: 84px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 8px 18px rgba(var(--escuro), .4)); }
 .auth-page h2 { font-size: 28px; font-weight: 800; }
 .auth-faixa { width: 46px; height: 4px; background: var(--sol); border-radius: 2px; margin: 10px 0 14px; }
 .auth-sub { font-size: 15px; color: rgba(255,255,255,.88); max-width: 330px; margin-bottom: 22px; }
 .auth-card {
   width: 100%; max-width: 350px; background: #fff; color: var(--tx); border-radius: 22px;
-  padding: 22px 20px; text-align: left; box-shadow: 0 16px 40px rgba(20, 10, 60, .3);
+  padding: 22px 20px; text-align: left; box-shadow: 0 16px 40px rgba(var(--escuro), .3);
 }
 .auth-card label { display: block; font-size: 12px; font-weight: 800; color: var(--mu); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 5px; }
-.auth-card input { width: 100%; padding: 12px; border: 1.5px solid var(--bo); border-radius: 12px; background: #fbfbfe; font-size: 16px; }
+.auth-card input { width: 100%; padding: 12px; border: 1.5px solid var(--bo); border-radius: 12px; background: var(--campo); font-size: 16px; }
 .auth-card input:focus { outline: none; border-color: var(--pri); }
 .auth-btn { width: 100%; padding: 13px; border: none; border-radius: 14px; font-weight: 800; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .auth-btn.google { background: #fff; border: 1.5px solid var(--bo); margin-top: 0; }
@@ -86,11 +97,14 @@ small { color: var(--mu); }
 .auth-status.ok { color: var(--ok); }
 
 /* ── ESTRUTURA ── */
+/* --vv-cima / --vv-baixo: a compensação do bug do iPhone em que, depois de o
+   teclado fechar, tudo o que é fixo fica preso a meio do ecrã (ver
+   _vvAcertar no app.js). Quase sempre 0. */
 .topo {
-  position: sticky; top: 0; z-index: 50;
+  position: sticky; top: var(--vv-cima, 0px); z-index: 50;
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-  background: rgba(245, 244, 251, .92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  background: rgba(var(--bg-rgb), .92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .topo-tit { display: flex; align-items: center; gap: 8px; }
 .topo-logo { width: 36px; height: 36px; object-fit: contain; }
@@ -99,10 +113,10 @@ small { color: var(--mu); }
 main { max-width: 640px; margin: 0 auto; padding: 4px 16px calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
 .tabbar {
-  position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); z-index: 60;
+  position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px + var(--vv-baixo, 0px)); z-index: 60;
   max-width: 616px; margin: 0 auto;
   display: grid; grid-template-columns: repeat(4, 1fr);
-  background: #fff; border-radius: 22px; box-shadow: 0 8px 30px rgba(46, 36, 119, .16);
+  background: #fff; border-radius: 22px; box-shadow: 0 8px 30px rgba(var(--tinta), .16);
   padding: 7px 4px;
 }
 /* Com um campo focado (teclado aberto) a tabbar sai — ver _tabbarRepor no app.js. */
@@ -145,9 +159,9 @@ html.a-escrever .tabbar { display: none; }
 .hc-pe { margin-top: auto; padding-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
 .hc-chip { background: rgba(255,255,255,.22); border-radius: 20px; padding: 4px 11px; font-weight: 800; font-size: 13px; }
 .hc-deco { position: absolute; right: -8px; bottom: -14px; font-size: 86px; opacity: .18; pointer-events: none; transform: rotate(-12deg); }
-.hc.anos { background: linear-gradient(140deg, var(--pri-dk), var(--pri)); }
+.hc.anos { background: linear-gradient(140deg, var(--anos-a), var(--anos-b)); }
 .hc.compra { background: linear-gradient(140deg, var(--coral-dk), var(--coral)); }
-.hc.compra.calma { background: linear-gradient(140deg, #7d77a3, #9d97c4); }
+.hc.compra.calma { background: linear-gradient(140deg, var(--calma-a), var(--calma-b)); }
 .hc.recebi { background: #fff; color: var(--tx); }
 .hc.recebi .hc-rot { color: var(--pri); opacity: 1; }
 .hc.recebi .hc-txt { color: var(--mu); }
@@ -250,11 +264,43 @@ html.a-escrever .tabbar { display: none; }
 .pg-recusado .tb-n { text-decoration: line-through; color: var(--mu); }
 
 .cartao.grupo { padding: 0; overflow: hidden; margin-bottom: 12px; }
-.gr-cab { width: 100%; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; background: var(--pri-lt); border: none; padding: 11px 16px; text-align: left; cursor: pointer; font-size: 14.5px; color: var(--pri-dk); }
-.gr-cab span { margin-left: auto; font-size: 13px; color: var(--mu); font-weight: 700; }
+.gr-cab { width: 100%; display: flex; align-items: baseline; gap: 6px; background: var(--pri-lt); border: none; padding: 11px 16px; text-align: left; cursor: pointer; font-size: 14.5px; color: var(--pri-dk); }
+.gr-tit { flex: 1; min-width: 0; }
+.gr-tot { flex-shrink: 0; font-size: 13px; color: var(--mu); font-weight: 800; }
 .gr-l { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--bo); }
-.gr-n { flex: 1; font-weight: 700; }
-.gr-v { color: var(--dg); font-weight: 800; }
+.gr-l.eu, .tb-l.eu { background: var(--sol-lt); }
+.gr-n { flex: 1; min-width: 0; font-weight: 700; display: flex; flex-direction: column; }
+.gr-v { color: var(--dg); font-weight: 800; white-space: nowrap; }
+.gr-acoes { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── DÍVIDAS: "A minha conta" e "O grupo" ── */
+.seg.dv-seg { margin: 0 0 14px; background: #fff; box-shadow: var(--sombra); }
+.seg.dv-seg button { font-size: 14.5px; padding: 10px 4px; }
+.seg.dv-seg button.on { background: var(--pri); color: #fff; box-shadow: none; }
+.dv-resumo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dv-tot { background: #fff; border-radius: var(--raio); padding: 14px 16px; box-shadow: var(--sombra); display: flex; flex-direction: column; }
+.dv-tot small { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--mu); }
+.dv-tot b { font-size: 28px; font-weight: 800; line-height: 1.15; }
+.dv-tot.neg b { color: var(--dg); }
+.dv-tot.pos b { color: var(--ok); }
+.dv-tot.zero b { color: var(--mu); }
+.cartao.dv-l { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
+.dv-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15.5px; }
+.dv-txt small { font-size: 13px; }
+.dv-dir { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.dv-v { font-size: 17px; font-weight: 800; }
+.dv-v.neg { color: var(--dg); }
+.dv-espera { color: var(--espera) !important; font-weight: 700; font-size: 12.5px; }
+.dv-chips { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.dv-chip { font-size: 12.5px; font-weight: 800; border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+.dv-chip.neg { background: var(--dg-bg); color: var(--dg); }
+.dv-chip.pos { background: var(--ok-bg); color: var(--ok); }
+/* No grupo, cada prenda é um botão (abre a folha); repõe o que o <button> tira. */
+.cartao.grupo.dv-ev { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.dv-ev .gr-cab { display: flex; }
+.dv-ev .gr-l { display: flex; }
+.dv-credor { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 14.5px; line-height: 1.3; }
+.dv-credor small { font-size: 13px; font-weight: 700; }
 
 /* ── CICLO ── */
 .ciclo { display: flex; flex-direction: column; }
@@ -273,16 +319,18 @@ html.a-escrever .tabbar { display: none; }
 .ciclo.sorteio .cc-l[onclick] { cursor: pointer; }
 
 /* ── FOLHA (bottom sheet) ── */
-.folha-fundo { position: fixed; inset: 0; z-index: 200; background: rgba(20, 14, 60, .42); opacity: 0; pointer-events: none; transition: opacity .2s; }
+.folha-fundo { position: fixed; inset: var(--vv-cima, 0px) 0 var(--vv-baixo, 0px); z-index: 200; background: rgba(var(--escuro), .42); opacity: 0; pointer-events: none; transition: opacity .2s; }
 .folha-fundo.on { opacity: 1; pointer-events: auto; }
 .folha {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 210; max-height: 92vh; overflow-y: auto;
+  position: fixed; left: 0; right: 0; bottom: var(--vv-baixo, 0px); z-index: 210; max-height: 92vh; overflow-y: auto;
   background: var(--bg); border-radius: 26px 26px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18);
-  transform: translateY(105%); transition: transform .25s ease; overscroll-behavior: contain;
+  transform: translateY(105%); transition: transform .25s ease, visibility 0s linear .25s; visibility: hidden; overscroll-behavior: contain;
   max-width: 640px; margin: 0 auto;
 }
-.folha.on { transform: none; }
-.folha-pega { width: 42px; height: 5px; border-radius: 3px; background: #d6d3e8; margin: 0 auto; }
+/* Fechada, além de fora do ecrã fica INVISÍVEL: com a janela trocada (o bug
+   do teclado do iPhone) espreitava por baixo da tabbar. */
+.folha.on { transform: none; visibility: visible; transition: transform .25s ease; }
+.folha-pega { width: 42px; height: 5px; border-radius: 3px; background: var(--pega); margin: 0 auto; }
 /* O topo da folha fica PRESO enquanto se desliza: a pega e o ✕. Antes, para
    fechar uma prenda ou o formulário era preciso ir até ao fundo. */
 .folha-topo { position: sticky; top: 0; z-index: 5; height: 48px; padding-top: 9px; background: var(--bg); border-radius: 26px 26px 0 0; }
@@ -313,7 +361,7 @@ html.a-escrever .tabbar { display: none; }
 .campo > span .obrig { color: var(--coral-dk); }
 .campo input, .campo select, .campo textarea, .linha-form input, .linha-form select {
   display: block; width: 100%; min-width: 0; max-width: 100%; padding: 11px 12px;
-  border: 1.5px solid var(--bo); border-radius: 12px; background: #fbfbfe; font-size: 16px;
+  border: 1.5px solid var(--bo); border-radius: 12px; background: var(--campo); font-size: 16px;
 }
 /* O iOS dá ao <input type=date> uma largura própria que ignora a coluna e o
    fazia passar por cima do campo ao lado. Sem aparência nativa, obedece. */
@@ -329,7 +377,7 @@ html.a-escrever .tabbar { display: none; }
 .linha-form .btn { flex-shrink: 0; }
 .seg { display: grid; grid-template-columns: repeat(2, 1fr); background: var(--bg); border-radius: 14px; padding: 4px; gap: 4px; margin: 4px 0 12px; }
 .seg button { border: none; background: none; border-radius: 11px; padding: 9px 4px; font-size: 13.5px; font-weight: 800; color: var(--mu); cursor: pointer; }
-.seg button.on { background: #fff; color: var(--pri); box-shadow: 0 1px 4px rgba(46,36,119,.12); }
+.seg button.on { background: #fff; color: var(--pri); box-shadow: 0 1px 4px rgba(var(--tinta), .12); }
 details.mais { margin: 4px 0 0; }
 details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color: var(--pri); margin-bottom: 12px; }
 .relatorio { font-size: 14px; background: var(--bg); border-radius: 12px; padding: 10px 12px; margin: 0 0 12px; }
@@ -360,7 +408,7 @@ details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color
 
 /* ── TOAST ── */
 .toast {
-  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); z-index: 400;
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px + var(--vv-baixo, 0px)); z-index: 400;
   transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: all .2s;
   background: var(--pri-dk); color: #fff; font-size: 14.5px; font-weight: 700; padding: 11px 18px; border-radius: 16px;
   max-width: calc(100vw - 32px); box-shadow: 0 8px 24px rgba(0,0,0,.25); text-align: center;
@@ -373,7 +421,7 @@ details.mais summary { cursor: pointer; font-size: 14px; font-weight: 800; color
   .hc-big { font-size: 26px; }
 }
 @media (min-width: 700px) {
-  .folha { bottom: 20px; border-radius: 26px; }
+  .folha { bottom: calc(20px + var(--vv-baixo, 0px)); border-radius: 26px; }
 }
 
 /* ── ATUALIZAR DO CATÁLOGO: uma linha por campo diferente, "agora → catálogo" ── */

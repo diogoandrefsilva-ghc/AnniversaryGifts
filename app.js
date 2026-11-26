@@ -612,49 +612,113 @@ function renderPrendas() {
 /* ── DÍVIDAS (públicas) ─────────────────────────────────────────────────
    Toda a gente vê tudo, de propósito: é um grupo de amigos, e a pergunta
    "quem é que ainda não pagou a garrafa do Filipe?" é de todos. Os números
-   vêm só da view `dividas` — nunca se recalcula uma quota aqui. */
-let _soMinhas = false;
+   vêm só da view `dividas` — nunca se recalcula uma quota aqui.
+   Dois modos (26/11/2026, o dono: "é confuso quem deve o quê a quem"):
+   · A MINHA CONTA — o que eu devo (a quem, de que prenda) e o que me
+     devem, com os botões que são MEUS: "Já paguei", "Recebi", 🔔,
+     aceitar/recusar um "já paguei".
+   · O GRUPO — quem deve a quem, prenda a prenda, só para ver. Antes as
+     linhas de todos tinham "Recebi" e 🔔 para o admin (pode gerir tudo), e
+     pareciam dívidas dele; gerir as dos outros faz-se na folha da prenda. */
+let _soMinhas = true;
 function renderDividas() {
     const el = document.getElementById('pg-dividas');
-    const abertas = dividas.filter(d => d.saldo > 0.004 && (!_soMinhas || d.devedor === AC.eu || d.credor === AC.eu));
-    // Totais por pessoa (deve / a receber) — sobre todas, não sobre o filtro.
+    const abertas = dividas.filter(d => d.saldo > 0.004);
+    const minhas = _soMinhas && !!AC.eu;
+    let html = AC.eu ? `<div class="seg dv-seg" role="group" aria-label="Ver">
+        <button class="${minhas ? 'on' : ''}" onclick="_soMinhas=true;renderDividas()">A minha conta</button>
+        <button class="${minhas ? '' : 'on'}" onclick="_soMinhas=false;renderDividas()">O grupo</button></div>` : '';
+    el.innerHTML = html + (minhas ? dividasMinhas(abertas) : dividasGrupo(abertas));
+}
+const _soma = ds => ds.reduce((s, d) => s + d.saldo, 0);
+// O "já paguei" pendente de uma dívida (pode haver mais do que um).
+function declaradosDe(eventoId, devedor) {
+    return pagamentos.filter(p => p.evento_id === eventoId && p.devedor === devedor && p.estado === 'declarado');
+}
+function dividasMinhas(abertas) {
+    const devo = abertas.filter(d => d.devedor === AC.eu)
+        .sort((a, b) => (eventoPorId(a.evento_id)?.data || '').localeCompare(eventoPorId(b.evento_id)?.data || ''));
+    const devem = abertas.filter(d => d.credor === AC.eu);
+    const tDevo = _soma(devo), tDevem = _soma(devem);
+    let html = `<div class="dv-resumo">
+        <div class="dv-tot ${tDevo > 0.004 ? 'neg' : 'zero'}"><small>Deves</small><b>${eur(tDevo)}</b></div>
+        <div class="dv-tot ${tDevem > 0.004 ? 'pos' : 'zero'}"><small>Devem-te</small><b>${eur(tDevem)}</b></div></div>`;
+    if (!devo.length && !devem.length) return html + vazio('Não deves nada, e ninguém te deve nada. 🥂');
+
+    // O que EU devo: uma linha por prenda, com a quem.
+    if (devo.length) {
+        html += `<h2 class="sec">Tu deves</h2><div class="lista">` + devo.map(d => {
+            const ev = eventoPorId(d.evento_id);
+            if (!ev) return '';
+            const espera = d.por_confirmar > 0;
+            return `<div class="cartao dv-l" onclick="abrirEvento(${ev.id})">${avatar(d.credor)}
+              <span class="dv-txt"><span>Ao <b>${esc(d.credor)}</b></span><small>prenda do ${esc(ev.aniversariante)} · ${fmtData(ev.data)}</small>
+                ${espera ? `<small class="dv-espera">⏳ Disseste que pagaste ${eur(d.por_confirmar)} — falta o ${esc(d.credor)} confirmar</small>` : ''}</span>
+              <span class="dv-dir"><b class="dv-v neg">${eur(d.saldo)}</b>
+                ${espera ? '' : `<button class="btn mini prim" onclick="event.stopPropagation();declararPagamento(${ev.id})">Já paguei</button>`}</span></div>`;
+        }).join('') + `</div>`;
+    }
+
+    // O que ME devem: agrupado pela prenda que eu comprei.
+    if (devem.length) {
+        html += `<h2 class="sec">Devem-te</h2>`;
+        const porEv = {};
+        devem.forEach(d => { (porEv[d.evento_id] = porEv[d.evento_id] || []).push(d); });
+        html += _idsPorData(porEv).map(id => {
+            const ev = eventoPorId(id);
+            if (!ev) return '';
+            return `<div class="cartao grupo"><button class="gr-cab" onclick="abrirEvento(${id})">
+                <span class="gr-tit">🎂 Prenda do <b>${esc(ev.aniversariante)}</b> · ${fmtData(ev.data)}</span><span class="gr-tot">${eur(_soma(porEv[id]))} ›</span></button>` +
+                porEv[id].map(d => {
+                    const decl = declaradosDe(id, d.devedor);
+                    const acoes = decl.length
+                        ? decl.map(p => `<button class="btn mini ok" onclick="resolverPagamento(${p.id},true)">Aceitar</button><button class="btn mini ghost" onclick="resolverPagamento(${p.id},false)">Recusar</button>`).join('')
+                        : `<button class="btn mini ghost" onclick="registarRecebido(${id},'${escJs(d.devedor)}')">Recebi</button><button class="btn mini ghost" title="Lembrar" aria-label="Lembrar" onclick="lembrar(${id},'${escJs(d.devedor)}')">🔔</button>`;
+                    return `<div class="gr-l">${avatar(d.devedor)}
+                      <span class="gr-n">${esc(d.devedor)}${decl.length ? `<small class="dv-espera">⏳ diz que pagou ${eur(decl.reduce((s, p) => s + p.valor, 0))}</small>` : ''}</span>
+                      <b class="gr-v">${eur(d.saldo)}</b><span class="gr-acoes">${acoes}</span></div>`;
+                }).join('') + `</div>`;
+        }).join('');
+    }
+    return html;
+}
+// A mais antiga primeiro — é a que está há mais tempo à espera.
+function _idsPorData(porEv) {
+    return Object.keys(porEv).map(Number).sort((a, b) => (eventoPorId(a)?.data || '').localeCompare(eventoPorId(b)?.data || ''));
+}
+function dividasGrupo(abertas) {
+    let html = '';
+    // O saldo de cada um, sobre todas as prendas.
     const pp = {};
-    dividas.filter(d => d.saldo > 0.004).forEach(d => {
+    abertas.forEach(d => {
         (pp[d.devedor] = pp[d.devedor] || { deve: 0, recebe: 0 }).deve += d.saldo;
         (pp[d.credor] = pp[d.credor] || { deve: 0, recebe: 0 }).recebe += d.saldo;
     });
     const pessoas = Object.keys(pp).sort((a, b) => (pp[b].deve - pp[b].recebe) - (pp[a].deve - pp[a].recebe));
-    let html = `<div class="chips">
-        <button class="chip${!_soMinhas ? ' on' : ''}" onclick="_soMinhas=false;renderDividas()">Todas</button>
-        <button class="chip${_soMinhas ? ' on' : ''}" onclick="_soMinhas=true;renderDividas()">As minhas</button></div>`;
-
-    const conf = pagamentosParaConfirmar();
-    if (conf.length) html += `<div class="cartao aviso">Tens ${conf.length} pagamento${conf.length === 1 ? '' : 's'} para confirmar — estão no <a href="#" onclick="irPara('inicio');return false">Início</a>.</div>`;
-
-    if (!_soMinhas && pessoas.length) {
-        html += `<h2 class="sec">Por pessoa</h2><div class="cartao tabela">` + pessoas.map(n => `
-          <div class="tb-l">${avatar(n)}<span class="tb-n">${esc(n)}</span>
-            <span class="tb-v ${pp[n].deve > 0.004 ? 'neg' : ''}">${pp[n].deve > 0.004 ? 'deve ' + eur(pp[n].deve) : ''}</span>
-            <span class="tb-v ${pp[n].recebe > 0.004 ? 'pos' : ''}">${pp[n].recebe > 0.004 ? 'recebe ' + eur(pp[n].recebe) : ''}</span></div>`).join('') + `</div>`;
+    if (pessoas.length) {
+        html += `<h2 class="sec">Cada um</h2><div class="cartao tabela">` + pessoas.map(n => `
+          <div class="tb-l${n === AC.eu ? ' eu' : ''}">${avatar(n)}<span class="tb-n">${esc(n)}${n === AC.eu ? ' <small>(tu)</small>' : ''}</span>
+            <span class="dv-chips">${pp[n].deve > 0.004 ? `<span class="dv-chip neg">deve ${eur(pp[n].deve)}</span>` : ''}${pp[n].recebe > 0.004 ? `<span class="dv-chip pos">a receber ${eur(pp[n].recebe)}</span>` : ''}</span></div>`).join('') + `</div>`;
     }
 
-    html += `<h2 class="sec">Em aberto <span class="sec-tot">${eur(abertas.reduce((s, d) => s + d.saldo, 0))}</span></h2>`;
-    if (!abertas.length) { el.innerHTML = html + vazio('Ninguém deve nada. 🥂'); return; }
-    // Agrupadas por prenda, a mais antiga primeiro — é a que está há mais tempo à espera.
+    html += `<h2 class="sec">Prenda a prenda <span class="sec-tot">${eur(_soma(abertas))}</span></h2>`;
+    if (!abertas.length) return html + vazio('Ninguém deve nada. 🥂');
+    html += `<p class="sec-nota">Toca numa prenda para ver tudo${AC.admin ? ' e marcar pagamentos por quem for' : ''}.</p>`;
     const porEv = {};
     abertas.forEach(d => { (porEv[d.evento_id] = porEv[d.evento_id] || []).push(d); });
-    const ids = Object.keys(porEv).map(Number).sort((a, b) => (eventoPorId(a)?.data || '').localeCompare(eventoPorId(b)?.data || ''));
-    html += ids.map(id => {
+    html += _idsPorData(porEv).map(id => {
         const ev = eventoPorId(id);
         if (!ev) return '';
-        return `<div class="cartao grupo"><button class="gr-cab" onclick="abrirEvento(${id})">🎂 <b>${esc(ev.aniversariante)}</b> · ${fmtData(ev.data)}<span>pago por ${esc(ev.responsavel)} ›</span></button>` +
-            porEv[id].map(d => `<div class="gr-l">${avatar(d.devedor)}<span class="gr-n">${esc(d.devedor)}${d.devedor === AC.eu ? ' (tu)' : ''}</span>
-              ${d.por_confirmar > 0 ? '<span class="pill espera">⏳</span>' : ''}
-              <b class="gr-v">${eur(d.saldo)}</b>
-              ${d.devedor === AC.eu && !(d.por_confirmar > 0) ? `<button class="btn mini prim" onclick="declararPagamento(${id})">Já paguei</button>` : ''}
-              ${podeGerirEvento(ev) && d.devedor !== AC.eu ? `<button class="btn mini ghost" onclick="registarRecebido(${id},'${escJs(d.devedor)}')">Recebi</button><button class="btn mini ghost" title="Lembrar" onclick="lembrar(${id},'${escJs(d.devedor)}')">🔔</button>` : ''}</div>`).join('') + `</div>`;
+        const ds = porEv[id];
+        const eu = ev.responsavel === AC.eu;
+        return `<button class="cartao grupo dv-ev" onclick="abrirEvento(${id})">
+            <span class="gr-cab"><span class="gr-tit">🎂 Prenda do <b>${esc(ev.aniversariante)}</b> · ${fmtData(ev.data)}</span><span class="gr-tot">›</span></span>
+            <span class="dv-credor">${avatar(ev.responsavel)}<span>${eu ? '<b>Tu</b> compraste' : `O <b>${esc(ev.responsavel)}</b> comprou`} a garrafa.<br><small>${ds.length === 1 ? 'Falta 1 pagar-' : `Faltam ${ds.length} pagar-`}${eu ? 'te' : 'lhe'}: ${eur(_soma(ds))}</small></span></span>` +
+            ds.map(d => `<span class="gr-l${d.devedor === AC.eu ? ' eu' : ''}">${avatar(d.devedor)}
+              <span class="gr-n">${esc(d.devedor)}${d.devedor === AC.eu ? ' <small>(tu)</small>' : ''}${d.por_confirmar > 0 ? `<small class="dv-espera">⏳ diz que pagou — falta confirmar</small>` : ''}</span>
+              <b class="gr-v">${eur(d.saldo)}</b></span>`).join('') + `</button>`;
     }).join('');
-    el.innerHTML = html;
+    return html;
 }
 
 /* ── SORTEIO (o separador; antes do primeiro sorteio, o ciclo) ──────────
@@ -809,7 +873,8 @@ function folhaEvento(id) {
                 else est = `<b class="tb-v neg">${eur(d.saldo)}</b>`;
                 if (d.saldo > 0.004) {
                     if (d.devedor === AC.eu && !(d.por_confirmar > 0)) acoes = `<button class="btn mini prim" onclick="declararPagamento(${ev.id})">Já paguei</button>`;
-                    if (gerir) acoes += `<button class="btn mini ghost" onclick="registarRecebido(${ev.id},'${escJs(d.devedor)}')">Recebi</button><button class="btn mini ghost" title="Lembrar" onclick="lembrar(${ev.id},'${escJs(d.devedor)}')">🔔</button>`;
+                    // O admin que não comprou não "recebeu" nada: marca por quem recebeu.
+                    if (gerir && d.devedor !== AC.eu) acoes += `<button class="btn mini ghost" onclick="registarRecebido(${ev.id},'${escJs(d.devedor)}')">${ev.responsavel === AC.eu ? 'Recebi' : 'Marcar pago'}</button><button class="btn mini ghost" title="Lembrar" onclick="lembrar(${ev.id},'${escJs(d.devedor)}')">🔔</button>`;
                 }
                 return `<div class="tb-l">${avatar(d.devedor)}<span class="tb-n">${esc(d.devedor)}</span>${est}${acoes ? `<span class="tb-acoes">${acoes}</span>` : ''}</div>`;
             }).join('') + `</div>`;
@@ -1862,9 +1927,53 @@ function _campoTexto(el) {
 function _tabbarRepor() {
     if (_campoTexto(document.activeElement)) return;
     document.documentElement.classList.remove('a-escrever');
-    window.scrollTo(window.scrollX, window.scrollY);
+    // Um scroll para o MESMO sítio não faz nada; um píxel ao lado e de volta
+    // obriga o Safari a voltar a medir a janela.
+    const y = window.scrollY, d = y > 0 ? -1 : 1;
+    window.scrollTo(window.scrollX, y + d);
+    requestAnimationFrame(() => { window.scrollTo(window.scrollX, y); _vvAcertar(); });
 }
-document.addEventListener('focusin', e => { if (_campoTexto(e.target)) document.documentElement.classList.add('a-escrever'); });
+/* iOS 26 (26/11/2026, "de vez em quando a barra fica perdida"): depois de o
+   teclado fechar, o visualViewport às vezes não volta ao sítio — offsetTop
+   fica > 0, ou a altura fica mais pequena do que a janela. É bug do WebKit
+   sem correção da Apple (developer.apple.com/forums/thread/800125, ainda na
+   beta do iOS 27), e tudo o que é fixo (a tabbar, o topo, a folha, o toast)
+   fica preso à janela "antiga": a barra a meio do ecrã e o topo escondido.
+   O empurrão de scroll do _tabbarRepor nem sempre chega, por isso mede-se a
+   diferença e compensa-se no CSS (--vv-cima, --vv-baixo). Só na app
+   INSTALADA (no Safari a barra de endereço mexe nestes números a cada
+   deslize), só sem teclado aberto, e só a diferença em relação ao que se
+   mediu ao abrir — se o iPhone tiver sempre uma diferença sua, não se mexe. */
+let _vvBase = null, _vvRaf = 0;
+function _vvMedir() {
+    const vv = window.visualViewport;
+    return vv ? { cima: vv.offsetTop, baixo: window.innerHeight - vv.offsetTop - vv.height, scale: vv.scale } : null;
+}
+function _vvAcertar() {
+    _vvRaf = 0;
+    const m = _vvMedir(), root = document.documentElement;
+    let cima = 0, baixo = 0;
+    if (m && _ehInstalada() && Math.abs(m.scale - 1) < 0.01 && !_campoTexto(document.activeElement)) {
+        if (!_vvBase) _vvBase = m;
+        cima = Math.round(m.cima - _vvBase.cima);
+        baixo = Math.round(m.baixo - _vvBase.baixo);
+        // Ruído de meio píxel não; e nada que passe de meio ecrã (isso já não é este bug).
+        if (Math.abs(cima) < 3 || Math.abs(cima) > window.innerHeight / 2) cima = 0;
+        if (Math.abs(baixo) < 3 || Math.abs(baixo) > window.innerHeight / 2) baixo = 0;
+    }
+    if (root.style.getPropertyValue('--vv-cima') !== cima + 'px') root.style.setProperty('--vv-cima', cima + 'px');
+    if (root.style.getPropertyValue('--vv-baixo') !== baixo + 'px') root.style.setProperty('--vv-baixo', baixo + 'px');
+}
+function _vvAgendar() { if (!_vvRaf) _vvRaf = requestAnimationFrame(_vvAcertar); }
+document.addEventListener('focusin', e => { if (_campoTexto(e.target)) { document.documentElement.classList.add('a-escrever'); _vvAgendar(); } });
 document.addEventListener('focusout', () => setTimeout(_tabbarRepor, 350));
-if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(_tabbarRepor, 50));
+if (window.visualViewport) {
+    visualViewport.addEventListener('resize', () => { _vvAgendar(); setTimeout(_tabbarRepor, 50); });
+    visualViewport.addEventListener('scroll', _vvAgendar);
+}
+window.addEventListener('scroll', _vvAgendar, { passive: true });
+// Rodar o telefone muda a janela a sério: volta-se a medir a base.
+window.addEventListener('orientationchange', () => { _vvBase = null; setTimeout(_vvAcertar, 400); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _vvAgendar(); });
+_vvAcertar();   // a base: ao abrir, sem teclado, a janela está certa
 sbInit();

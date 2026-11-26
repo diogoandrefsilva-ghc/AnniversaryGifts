@@ -35,7 +35,12 @@ schema **`anniversarygifts`**.
 - `style.css` — todo o CSS. Paleta de **festa** (violeta `--pri`, coral,
   amarelo `--sol`) e fonte Nunito — **de propósito longe do bordô/dourado**
   das apps de vinhos: já havia várias assim, e o dono quis variar. Não
-  voltar a puxar isto para o estilo da Garrafeira.
+  voltar a puxar isto para o estilo da Garrafeira. **A paleta toda vive no
+  `:root`** (incluindo os tons das sombras e véus, `--tinta`, `--escuro`,
+  `--bg-rgb`): mudar de cores é mudar esse bloco (e o `theme-color` do
+  `index.html`/`manifest.json`). Cor escrita à mão fora do `:root` = não.
+  A 26/11/2026 o dono disse que já não adora o roxo e quer outra cor e
+  outro logo — em escolha.
 - `sw.js` — service worker (cache + push). **Sobe `CACHE_NAME`** sempre que
   mexeres em `app.js`, `style.css` ou `index.html`.
 - `db/schema.sql` — o schema inteiro, idempotente. `db/seed-amigos.sql` —
@@ -268,6 +273,36 @@ eu) · a próxima prenda que EU compro · a
 pede ação (pagamentos para confirmar, aniversários por registar). O dono
 gosta de inícios assim, com cartões grandes — lista nova vai por baixo ou
 para outro separador, não entre os cartões.
+
+## O separador Dívidas: "A minha conta" e "O grupo" (26/11/2026)
+O dono: "é confuso quem deve o quê a quem — se calhar é só a mim porque sou
+admin". Era: as linhas de TODOS tinham "Recebi" e 🔔 para o admin (que pode
+gerir qualquer prenda), e pareciam dívidas dele; o cabeçalho dizia "pago por
+X" sem dizer que X é a quem se deve.
+- **A minha conta** (abre por defeito): "Deves" / "Devem-te" em grande; "Tu
+  deves" com uma linha por prenda — "Ao **X** · prenda do Y" — e o "Já
+  paguei"; "Devem-te" por prenda que comprei, com Recebi/🔔 ou, se a pessoa
+  declarou, Aceitar/Recusar ali mesmo.
+- **O grupo**: só para VER — o saldo de cada um e, prenda a prenda, "O X
+  comprou a garrafa · faltam N pagar-lhe", sem botões. Gerir a dívida de
+  outro (o admin) faz-se na folha da prenda, onde o botão diz **"Marcar
+  pago"** quando não fui eu que comprei (só "Recebi" para quem recebeu).
+- **Botões numa lista de dívidas = só nas linhas que são minhas.** Não voltar
+  a pôr os de gestão em todas as linhas.
+
+## A barra a meio do ecrã (iPhone, iOS 26)
+Bug do WebKit sem correção da Apple (developer.apple.com/forums/thread/800125,
+ainda na beta do iOS 27): depois de o teclado fechar, o `visualViewport` às
+vezes não volta ao sítio e tudo o que é `position: fixed` fica preso à janela
+antiga — a tabbar a meio do ecrã e o topo escondido. Três defesas, no fim do
+`app.js` (`_tabbarRepor`, `_vvAcertar`): esconder a tabbar com um campo
+focado; ao fechar o teclado, um empurrão de 1 px no scroll; e, **só na app
+instalada e só sem teclado**, medir a diferença entre a janela e o
+visualViewport (em relação à base medida ao abrir) e compensá-la no CSS com
+`--vv-cima` (topo) e `--vv-baixo` (tabbar, folha, fundo, toast). Elemento
+fixo novo = usa estas variáveis também. A folha fechada fica `visibility:
+hidden` para não espreitar se a janela estiver trocada. Não dá para testar
+no Chromium — se voltar a acontecer, é aqui.
 
 ## O preço e "quem já pagou"
 - **O preço é SEMPRE opcional.** Registar a garrafa e gerir as contas pela
