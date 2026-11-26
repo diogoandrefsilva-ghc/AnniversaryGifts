@@ -7,10 +7,13 @@ garrafa de vinho**. **Sem build, sem npm, sem dependências.** Site estático
 schema **`anniversarygifts`**.
 
 ## A regra do grupo (é isto que a app modela)
-1. Cada amigo tem um dia de anos. Ordenados pelo calendário formam um
-   **ciclo**.
-2. Quem faz anos **imediatamente antes** compra e escolhe a garrafa para o
-   seguinte (o primeiro do ano recebe do último).
+1. Cada amigo tem um dia de anos.
+2. **Desde 26/11/2026 é por SORTEIO** (ver "O sorteio"): cada um tira outro
+   e compra-lhe a garrafa no próximo aniversário; **só sabe a quem lhe
+   saiu**, e quem deu a quem aparece a todos quando a prenda é registada.
+   Antes disso era o **ciclo**: quem fazia anos imediatamente antes comprava
+   para o seguinte (o primeiro do ano recebia do último) — ainda vale para
+   os aniversários de antes do primeiro sorteio.
 3. Quem compra **divide o custo com todos os outros, menos quem faz anos**
    (quem compra paga a sua parte, como os outros).
 4. Pagamentos à SplitBill: quem deve **declara** "já paguei", quem recebeu
@@ -26,7 +29,7 @@ schema **`anniversarygifts`**.
 - `app.js` — toda a lógica. Secções (`grep` pelo título `/* ── `):
   Sessão Supabase · Escapes & formatos · Toast · **Folhas** · **Dados** ·
   **O ciclo** · Permissões · Navegação · Bocados reutilizados · Ecrã inicial ·
-  Prendas · **Dívidas** · Ciclo · **A prenda (ver)** · **A prenda
+  Prendas · **Dívidas** · **O sorteio** · Sorteio (o separador) · **A prenda (ver)** · **A prenda
   (registar/editar)** · **O vinho: procurar informação** · **Pagamentos** ·
   Definições · Notificações push · Auth · Init.
 - `style.css` — todo o CSS. Paleta de **festa** (violeta `--pri`, coral,
@@ -192,6 +195,39 @@ a quem a vai receber —, e se mudares os estados (`comprado`/`entregue`) ou
 os campos `vinho.nome`/`produtor`/`catalogo_id`, vê essa função no mesmo
 dia.
 
+## O sorteio (26/11/2026)
+O dono: "agora que fechámos um ciclo de prendas, quero alterar o método. Em
+vez de darmos sempre a quem faz anos a seguir, a partir de agora é sorteio.
+Cada pessoa só sabe a quem tem que dar. Quando registar na aplicação, os
+outros passam a ver essa informação."
+- **Tabelas `sorteios` (uma ronda: `inicio`) e `sorteio_pares`**
+  (`aniversariante`, `data` que conta, `responsavel`). Cada amigo ativo com
+  data entra com o **primeiro aniversário desde o `inicio` que ainda não tem
+  prenda nem está noutro sorteio** — por isso um aniversário nunca fica em
+  dois sorteios (`UNIQUE (aniversariante, ano)`) nem num já dado.
+- **Só o admin sorteia** (`sortear(p_inicio, p_refazer)`, separador
+  Sorteio). A app propõe o início = um ano depois do início do último (é
+  quando ele acaba); pode fazer-se antes. **Refazer** só enquanto nenhuma
+  prenda desse sorteio foi registada.
+- **O sorteio evita**, se puder, o par da última vez (no primeiro, o do
+  ciclo — era isso que se queria mudar) e os trocados (A↔B). Larga primeiro
+  os trocados, depois a repetição; "ninguém se tira a si" nunca.
+- **O segredo é do SERVIDOR.** `sorteio_pares` não se lê por REST, nem pelo
+  admin (também entra no sorteio). Lê-se a **`sorteio_v`**: todos os
+  aniversários sorteados, com o `responsavel` **só na linha em que és tu**.
+  A `sortear` não devolve pares. O aviso push (`sorteio`) é igual para
+  todos e **não diz nomes** — aparece no ecrã bloqueado. Quem é dono do
+  projeto Supabase vê a tabela no SQL Editor; é não ir lá espreitar.
+- **Quem deu a quem aparece quando a prenda é registada**: é o
+  `responsavel` do evento, que todos veem como sempre — **incluindo quem faz
+  anos** (a garrafa continua escondida até ser entregue; quem compra, não).
+- **O par é a proposta; o gravado manda** (como o ciclo era). A
+  `guardar_evento` não deixa outro amigo registar um aniversário sorteado
+  que não lhe saiu; o admin pode registar com quem for preciso.
+- Na app, `quemCompra(x)` decide em todo o lado: evento → o gravado; par →
+  "tu" ou 🤫 segredo; antes do primeiro sorteio → o ciclo (`responsavelPor`);
+  depois e fora de todos → "por sortear". Não voltar a ler o ciclo direto.
+
 ## A garrafa é SURPRESA para quem faz anos
 - **Estados: só `comprado` e `entregue`.** "Por comprar" saiu a pedido do
   dono: a prenda regista-se quando a garrafa já foi comprada, e "comprada"
@@ -218,7 +254,8 @@ dia.
   dívida e os lembretes não saíam para ninguém (200, `enviados: 0`).
 
 ## O ecrã inicial: quatro cartões grandes
-Próximo aniversário (e quem compra) · a próxima prenda que EU compro · a
+Próximo aniversário (e quem compra — 🤫 segredo se for sorteado e não for
+eu) · a próxima prenda que EU compro · a
 última que recebi · a minha conta (a pagar / a receber). Por baixo só o que
 pede ação (pagamentos para confirmar, aniversários por registar). O dono
 gosta de inícios assim, com cartões grandes — lista nova vai por baixo ou
@@ -255,7 +292,8 @@ O cliente só diz **de que se trata** (`evento_id`, `pagamento_id`); valores,
 nomes e texto saem da BD, lá dentro. Assim nenhum aviso diz um valor
 diferente do ecrã. Tipos: `divida` (ao guardar um preço novo, só em prendas
 dos últimos 45 dias — registar o histórico não acorda ninguém), `lembrete`,
-`pagamento_declarado`, `pagamento_resolvido`, `pedido_acesso`.
+`pagamento_declarado`, `pagamento_resolvido`, `pedido_acesso`, `sorteio`
+(o admin, a todos os do sorteio menos ele; sem nomes — é segredo).
 Mesmo par VAPID do SplitBill (os secrets são do projeto); a tabela de
 subscriptions é própria porque o service worker é outro.
 

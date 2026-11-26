@@ -267,6 +267,10 @@ html.a-escrever .tabbar { display: none; }
 .cc-n { grid-area: n; font-weight: 800; }
 .cc-compra { grid-area: c; font-size: 13px; color: var(--mu); }
 .cc-volta { text-align: center; font-size: 13.5px; color: var(--mu); margin-top: -4px; font-weight: 700; }
+/* O sorteio: a mesma linha, sem a seta do ciclo (não é uma corrente) */
+.ciclo.sorteio .cc-l { margin-bottom: 8px; }
+.ciclo.sorteio .cc-l::after { content: none; }
+.ciclo.sorteio .cc-l[onclick] { cursor: pointer; }
 
 /* ── FOLHA (bottom sheet) ── */
 .folha-fundo { position: fixed; inset: 0; z-index: 200; background: rgba(20, 14, 60, .42); opacity: 0; pointer-events: none; transition: opacity .2s; }

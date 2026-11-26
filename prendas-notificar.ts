@@ -18,6 +18,10 @@
 //   'pagamento_resolvido'  pagamento_id → quem declarou: aceite ou recusado
 //                           (quem o chama: quem recebeu, ou o admin)
 //   'pedido_acesso'        → o admin (qualquer sessão válida o pode chamar)
+//   'sorteio'              sorteio_id → todos os que entraram no sorteio
+//                           (quem o chama: o admin). O MESMO texto para
+//                           todos e SEM nomes: quem saiu a quem é segredo, e
+//                           um aviso aparece no ecrã bloqueado a quem passa.
 //
 // verify_jwt LIGADO no deploy. Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
 // VAPID_SUBJECT (opcional) — os mesmos da push-notificar.
@@ -108,8 +112,8 @@ Deno.serve(async (req) => {
   try {
     const acesso = await acessoDe(req.headers.get("Authorization") ?? "");
     if (!acesso || !acesso.email) return json({ error: "não autorizado" }, 403);
-    const { tipo, evento_id, pagamento_id, devedor } = await req.json() as {
-      tipo?: string; evento_id?: number; pagamento_id?: number; devedor?: string;
+    const { tipo, evento_id, pagamento_id, devedor, sorteio_id } = await req.json() as {
+      tipo?: string; evento_id?: number; pagamento_id?: number; devedor?: string; sorteio_id?: number;
     };
 
     if (tipo === "pedido_acesso") {
@@ -121,6 +125,17 @@ Deno.serve(async (req) => {
       }));
     }
     if (!acesso.permitido) return json({ error: "não autorizado" }, 403);
+
+    if (tipo === "sorteio") {
+      if (!acesso.admin) return json({ error: "não autorizado" }, 403);
+      // Só os nomes de quem DÁ (são todos os que entraram); o par não sai daqui.
+      const ps = await ler<{ responsavel: string }>(`sorteio_pares?sorteio_id=eq.${Number(sorteio_id)}&select=responsavel`);
+      const emails = await emailsDe(ps.map((p) => p.responsavel).filter((n) => n !== acesso.eu));
+      return json(await enviar([...emails.values()], {
+        title: "🎲 Já há sorteio!",
+        body: "Abre a app para veres a quem te calhou dar a prenda — é segredo 🤫",
+      }));
+    }
 
     if (tipo === "divida" || tipo === "lembrete") {
       const ev = (await ler<Evento>(`eventos?id=eq.${Number(evento_id)}&select=id,aniversariante,responsavel,ano`))[0];

@@ -240,17 +240,22 @@ function pedirValor(titulo, msgHtml, sugestao, textoOk) {
    prenda por aniversário): carrega-se tudo de uma vez, sempre. */
 let AC = { email: '', permitido: false, admin: false, eu: null };   // quem sou (anniversarygifts.acesso)
 let amigos = [], eventos = [], pagamentos = [], dividas = [], config = {};
+let sorteios = [], pares = [];   // ver O SORTEIO
 let _carregadoEm = 0;
 
 async function carregarDados() {
-    const [am, ev, pg, dv, cf] = await Promise.all([
+    const [am, ev, pg, dv, cf, so, pa] = await Promise.all([
         sbGet('amigos?select=*&order=nome'),
         sbGet('eventos_v?select=*&order=data.desc'),
         sbGet('pagamentos?select=*&order=criado_em.desc'),
         sbGet('dividas?select=*'),
-        sbGet('config?select=chave,valor')
+        sbGet('config?select=chave,valor'),
+        // Sem o SQL do sorteio corrido, a app continua no ciclo em vez de
+        // não abrir: o site e a BD não sobem ao mesmo tempo.
+        sbGet('sorteios?select=*&order=inicio,id').catch(() => []),
+        sbGet('sorteio_v?select=*&order=data').catch(() => [])
     ]);
-    amigos = am; eventos = ev; pagamentos = pg;
+    amigos = am; eventos = ev; pagamentos = pg; sorteios = so; pares = pa;
     dividas = dv.map(d => ({ ...d, quota: +d.quota, pago: +d.pago, por_confirmar: +d.por_confirmar, saldo: +d.saldo }));
     eventos.forEach(e => { e.valor = e.valor == null ? null : +e.valor; e.valor_dividir = e.valor_dividir == null ? null : +e.valor_dividir; e.vinho = e.vinho || {}; e.participantes = e.participantes || []; });
     pagamentos.forEach(p => { p.valor = +p.valor; });
@@ -338,15 +343,56 @@ function proximosAniversarios() { const h = hoje(); return aniversarios().filter
 // se quer registá-la.
 function aniversariosPorRegistar() { const h = hoje(); return aniversarios().filter(x => x.data <= h && !x.evento); }
 
+/* ── O SORTEIO ──────────────────────────────────────────────────────────
+   (26/11/2026) Fechado um ciclo, o grupo passou a SORTEAR quem dá a quem:
+   cada um tira outro e compra-lhe a garrafa no próximo aniversário. Cada um
+   só sabe a quem lhe saiu; quem deu a quem aparece a todos quando a prenda
+   é registada (é o `responsavel` do evento, como sempre).
+   O segredo é do SERVIDOR: `pares` vem da `sorteio_v`, com todos os
+   aniversários sorteados mas o `responsavel` só preenchido onde és TU — o
+   resto não chega a ninguém, nem ao admin. Os aniversários de antes do
+   primeiro sorteio continuam com o ciclo (os que ficaram por registar). */
+function parDe(nome, ano) { return pares.find(p => p.aniversariante === nome && p.ano === ano) || null; }
+function inicioSorteios() { return sorteios.length ? sorteios[0].inicio : null; }
+function _aniv(nome, data) { return { nome, data, ano: +String(data).slice(0, 4), evento: null }; }
+// Quem compra a prenda de um aniversário ({nome, data, ano, evento}): o
+// gravado manda; depois o sorteio (só se sabe se fores tu); antes do
+// primeiro sorteio, o ciclo; depois dele e fora de todos, ainda ninguém.
+function quemCompra(x) {
+    if (x.evento) return { nome: x.evento.responsavel };
+    const p = parDe(x.nome, x.ano);
+    if (p) return p.responsavel ? { nome: p.responsavel } : { segredo: true };
+    const ini = inicioSorteios();
+    if (!ini || x.data < ini) return { nome: responsavelPor(x.nome) };
+    return { porSortear: true };
+}
+function quemCompraHTML(c) {
+    if (c.segredo) return '🤫 <i>segredo</i>';
+    if (c.porSortear) return '<i>por sortear</i>';
+    if (!c.nome) return '—';
+    return `<b>${esc(c.nome)}</b>${c.nome === AC.eu ? ' (tu)' : ''}`;
+}
+// O que o admin propõe para o próximo sorteio: um ano depois do início do
+// último (é aí que ele acaba), ou hoje se isso já passou.
+function proximoInicioSorteio() {
+    const ult = sorteios[sorteios.length - 1];
+    if (!ult) return hoje();
+    const [y, m, d] = ult.inicio.split('-').map(Number);
+    const um = isoDe(y + 1, m, Math.min(d, m === 2 ? 28 : d));
+    return um > hoje() ? um : hoje();
+}
+
 /* ── PERMISSÕES (a UI só decide que botões mostrar; o servidor confirma) ── */
 // A garrafa é SURPRESA para quem faz anos até ser entregue (eventos_v manda-a
 // vazia, `vinho_oculto`): nem o admin gere nem regista a sua própria.
 function podeGerirEvento(ev) { return !ev.vinho_oculto && (AC.admin || (!!AC.eu && ev.responsavel === AC.eu)); }
-function podeRegistarAniversario(nome) { return nome !== AC.eu && (AC.admin || (!!AC.eu && responsavelPor(nome) === AC.eu)); }
+// `x` é um aniversário ({nome, data, ano}): quem o regista é quem lhe compra
+// a prenda (pelo sorteio, ou pelo ciclo antes dele) — ou o admin.
+function podeRegistarAniversario(x) { return x.nome !== AC.eu && (AC.admin || (!!AC.eu && quemCompra(x).nome === AC.eu)); }
 
 /* ── NAVEGAÇÃO ──────────────────────────────────────────────────────────── */
 let _pagina = 'inicio';
-const TITULOS = { inicio: 'Prendas', prendas: 'Prendas dadas', dividas: 'Dívidas', ciclo: 'Ciclo', definicoes: 'Definições' };
+const TITULOS = { inicio: 'Prendas', prendas: 'Prendas dadas', dividas: 'Dívidas', ciclo: 'Sorteio', definicoes: 'Definições' };
 function irPara(p) {
     _pagina = p;
     document.querySelectorAll('.pagina').forEach(s => { s.hidden = s.id !== 'pg-' + p; });
@@ -471,26 +517,28 @@ function renderInicio() {
 function cartaoProximoAnos(prox) {
     const x = prox[0];
     if (!x) return `<div class="hc anos largo"><span class="hc-rot">Próximo aniversário</span><span class="hc-med">Sem datas marcadas</span></div>`;
-    const resp = x.evento ? x.evento.responsavel : responsavelPor(x.nome);
+    const c = quemCompra(x);
     const n = diasEntre(hoje(), x.data);
     // Sem prenda ainda: quem a pode registar (quem compra, ou o admin) vai
     // direto ao formulário. Isto chegou a levar ao Ciclo — e a prenda dos anos
     // de HOJE ficava sem porta nenhuma, porque "Por registar" só tinha o passado.
-    const podeReg = !x.evento && podeRegistarAniversario(x.nome);
+    const podeReg = !x.evento && podeRegistarAniversario(x);
     const click = x.evento ? `abrirEvento(${x.evento.id})` : (podeReg ? `novoEvento('${escJs(x.nome)}','${x.data}')` : `irPara('ciclo')`);
     return `<button class="hc anos largo" onclick="${click}">
         <span class="hc-deco" aria-hidden="true">🎂</span>
         <span class="hc-rot">Próximo aniversário</span>
         <span class="hc-big">${esc(x.nome)}${x.nome === AC.eu ? ' <small style="color:inherit;opacity:.8">(tu!)</small>' : ''}</span>
         <span class="hc-txt">${fmtData(x.data, false)} · ${n === 0 ? 'é hoje! 🎉' : quandoTexto(x.data)}</span>
-        <span class="hc-pe"><span class="hc-chip">🛒 compra ${resp ? esc(resp) + (resp === AC.eu ? ' (tu)' : '') : '—'}</span>${x.evento ? `<span class="hc-chip">${ESTADOS[x.evento.estado]}</span>` : (podeReg ? `<span class="hc-chip">Registar ›</span>` : '')}</span>
+        <span class="hc-pe"><span class="hc-chip">🛒 compra ${c.segredo ? '🤫 segredo' : c.porSortear ? 'por sortear' : c.nome ? esc(c.nome) + (c.nome === AC.eu ? ' (tu)' : '') : '—'}</span>${x.evento ? `<span class="hc-chip">${ESTADOS[x.evento.estado]}</span>` : (podeReg ? `<span class="hc-chip">Registar ›</span>` : '')}</span>
       </button>`;
 }
 // 2. A próxima garrafa que ME cabe comprar.
 function cartaoMinhaCompra(prox) {
     if (!AC.eu) return '';
-    const x = prox.find(p => (p.evento ? p.evento.responsavel : responsavelPor(p.nome)) === AC.eu && !(p.evento && p.evento.estado === 'entregue'));
-    if (!x) return `<div class="hc compra calma"><span class="hc-rot">A tua próxima prenda</span><span class="hc-med">Nada a comprar</span><span class="hc-txt">Não estás no ciclo, ou já está tudo entregue.</span></div>`;
+    const x = prox.find(p => quemCompra(p).nome === AC.eu && !(p.evento && p.evento.estado === 'entregue'));
+    if (!x) return `<div class="hc compra calma"><span class="hc-rot">A tua próxima prenda</span><span class="hc-med">Nada a comprar</span><span class="hc-txt">${sorteios.length ? 'Já entregaste a tua, ou ainda não há sorteio.' : 'Não estás no ciclo, ou já está tudo entregue.'}</span></div>`;
+    // Saiu no sorteio e ainda não está registada: só tu sabes.
+    const segredo = !x.evento && !!parDe(x.nome, x.ano);
     const n = diasEntre(hoje(), x.data);
     const urgente = n <= 30 && !x.evento;
     const click = x.evento ? `abrirEvento(${x.evento.id})` : `novoEvento('${escJs(x.nome)}','${x.data}')`;
@@ -499,7 +547,7 @@ function cartaoMinhaCompra(prox) {
         <span class="hc-rot">A tua próxima prenda</span>
         <span class="hc-med">Para o ${esc(x.nome)}</span>
         <span class="hc-txt">${fmtData(x.data, false)} · ${quandoTexto(x.data)}</span>
-        <span class="hc-pe"><span class="hc-chip">${x.evento ? ESTADOS[x.evento.estado] : 'Registar ›'}</span></span>
+        <span class="hc-pe"><span class="hc-chip">${x.evento ? ESTADOS[x.evento.estado] : 'Registar ›'}</span>${segredo ? '<span class="hc-chip">🎲 saiu-te · só tu sabes</span>' : ''}</span>
       </button>`;
 }
 // 3. A última garrafa que me ofereceram.
@@ -529,15 +577,14 @@ function cartaoMinhaConta() {
       </button>`;
 }
 function linhaAniversario(x) {
-    const resp = x.evento ? x.evento.responsavel : responsavelPor(x.nome);
     const n = diasEntre(hoje(), x.data);
     const quando = n >= 0 && n <= 60 ? quandoTexto(x.data) : fmtData(x.data);
     let acao = '';
     if (x.evento) acao = estadoPill(x.evento);
-    else if (podeRegistarAniversario(x.nome)) acao = `<button class="btn mini prim" onclick="event.stopPropagation();novoEvento('${escJs(x.nome)}','${x.data}')">Registar</button>`;
-    const click = x.evento ? `abrirEvento(${x.evento.id})` : (podeRegistarAniversario(x.nome) ? `novoEvento('${escJs(x.nome)}','${x.data}')` : '');
+    else if (podeRegistarAniversario(x)) acao = `<button class="btn mini prim" onclick="event.stopPropagation();novoEvento('${escJs(x.nome)}','${x.data}')">Registar</button>`;
+    const click = x.evento ? `abrirEvento(${x.evento.id})` : (podeRegistarAniversario(x) ? `novoEvento('${escJs(x.nome)}','${x.data}')` : '');
     return `<div class="cartao linha"${click ? ` onclick="${click}"` : ''}>${avatar(x.nome)}
-      <span class="ln-txt"><b>🎂 ${esc(x.nome)}</b><small>${esc(quando)} · compra ${resp ? '<b>' + esc(resp) + '</b>' + (resp === AC.eu ? ' (tu)' : '') : '—'}</small></span>
+      <span class="ln-txt"><b>🎂 ${esc(x.nome)}</b><small>${esc(quando)} · compra ${quemCompraHTML(quemCompra(x))}</small></span>
       ${acao}</div>`;
 }
 
@@ -557,7 +604,7 @@ function renderPrendas() {
     if (lista.length) html += `<p class="sec-nota">${lista.length} prenda${lista.length === 1 ? '' : 's'} · ${eur(total)} em vinho</p>`;
     html += lista.length ? `<div class="lista">${lista.map(cartaoPrenda).join('')}</div>`
         : vazio('Ainda não há prendas registadas.<br>Começa pelas que já foram dadas — estão em <b>Início › Por registar</b>.');
-    if (AC.admin) html += `<button class="btn ghost largo" onclick="novoEvento(null, hoje())">+ Prenda fora do ciclo</button>`;
+    if (AC.admin) html += `<button class="btn ghost largo" onclick="novoEvento(null, hoje())">+ Prenda fora do ${sorteios.length ? 'sorteio' : 'ciclo'}</button>`;
     el.innerHTML = html;
 }
 
@@ -609,11 +656,95 @@ function renderDividas() {
     el.innerHTML = html;
 }
 
-/* ── CICLO ──────────────────────────────────────────────────────────────── */
+/* ── SORTEIO (o separador; antes do primeiro sorteio, o ciclo) ──────────
+   Em cima, o que TE saiu (só tu o vês). Depois cada sorteio, aniversário a
+   aniversário: quem compra fica "segredo" até a prenda ser registada — aí
+   aparece a todos. O admin sorteia (e refaz, enquanto ninguém registou),
+   mas vê o mesmo que os outros: o servidor não lhe manda os pares. */
 function renderCiclo() {
     const el = document.getElementById('pg-ciclo');
+    if (!sorteios.length) { el.innerHTML = cicloAntigoHTML(); return; }
+    const evDe = p => eventos.find(e => e.aniversariante === p.aniversariante && e.ano === p.ano) || null;
+    let html = '';
+
+    // O que me saiu, por entregar (o admin pode ter registado com outro: aí já não é meu).
+    const meus = pares.filter(p => p.responsavel).map(p => ({ p, ev: evDe(p) }))
+        .filter(({ ev }) => !ev || (ev.responsavel === AC.eu && ev.estado !== 'entregue'));
+    if (meus.length) {
+        html += `<div class="hero">` + meus.map(({ p, ev }) => `
+          <button class="hc compra largo" onclick="${ev ? `abrirEvento(${ev.id})` : `novoEvento('${escJs(p.aniversariante)}','${p.data}')`}">
+            <span class="hc-deco" aria-hidden="true">🎲</span>
+            <span class="hc-rot">Saiu-te</span>
+            <span class="hc-big">${esc(p.aniversariante)}</span>
+            <span class="hc-txt">anos a ${fmtData(p.data, false)} · ${quandoTexto(p.data)}</span>
+            <span class="hc-pe"><span class="hc-chip">${ev ? ESTADOS[ev.estado] : 'Registar ›'}</span>${ev ? '' : '<span class="hc-chip">🤫 só tu sabes</span>'}</span>
+          </button>`).join('') + `</div>`;
+    } else if (AC.eu) {
+        html += `<div class="cartao aviso">${pares.some(p => p.responsavel) ? 'A prenda que te saiu já foi entregue. 🥂' : 'Não entraste em nenhum sorteio (precisas de ter data de anos).'}</div>`;
+    }
+    html += `<p class="sec-nota" style="margin-top:12px">Cada um só sabe a quem lhe saiu. Quando a prenda é registada, todos passam a ver quem a deu.</p>`;
+
+    // Os sorteios, o mais recente primeiro; os antigos fechados.
+    sorteios.slice().reverse().forEach((s, i) => {
+        const ps = pares.filter(p => p.sorteio_id === s.id);
+        const reg = ps.filter(evDe).length;
+        const linhas = `<div class="ciclo sorteio">` + ps.map(p => {
+            const ev = evDe(p);
+            const [, m, d] = p.data.split('-').map(Number);
+            let quem;
+            if (ev) quem = `${ev.estado === 'entregue' ? '🎁 dada' : '🛒 comprada'} pelo <b>${esc(ev.responsavel)}</b>${ev.responsavel === AC.eu ? ' (tu)' : ''}`;
+            else if (p.responsavel) quem = '🎲 saiu-te a ti';
+            else quem = '🤫 segredo';
+            const click = ev ? `abrirEvento(${ev.id})` : (p.responsavel ? `novoEvento('${escJs(p.aniversariante)}','${p.data}')` : '');
+            return `<div class="cc-l${p.responsavel && !ev ? ' eu' : ''}"${click ? ` onclick="${click}"` : ''}>
+              <span class="cc-data"><b>${d}</b>${MESES[m - 1]}</span>
+              ${avatar(p.aniversariante)}<span class="cc-n">${esc(p.aniversariante)}${p.aniversariante === AC.eu ? ' <small>(tu)</small>' : ''}</span>
+              <span class="cc-compra">${quem}</span>
+            </div>`;
+        }).join('') + `</div>`;
+        const refazer = AC.admin && i === 0 && !reg
+            ? `<button class="btn ghost largo" onclick="fazerSorteio(${s.id})">🔁 Refazer este sorteio</button>
+               <p class="sec-nota" style="margin-top:6px">Só enquanto ninguém registou a prenda (por exemplo, se faltou alguém).</p>` : '';
+        const cab = `🎲 Sorteio de ${fmtData(s.inicio)}`;
+        const nota = `<p class="sec-nota">${reg} de ${ps.length} prenda${ps.length === 1 ? '' : 's'} registada${reg === 1 ? '' : 's'}.</p>`;
+        html += i === 0
+            ? `<h2 class="sec">${cab} <span class="sec-tot">${ps.length}</span></h2>${nota}${linhas}${refazer}`
+            : `<details class="mais"><summary>${cab}</summary>${nota}${linhas}</details>`;
+    });
+    html += sorteioAdminHTML() + rodapeAmigosHTML();
+    el.innerHTML = html;
+}
+// Admin: fazer o próximo sorteio. Proposto para quando o último acaba (um
+// ano depois do início dele) — pode fazer-se antes, para quem faz anos logo
+// a seguir não ficar sem tempo de comprar.
+function sorteioAdminHTML() {
+    if (!AC.admin) return '';
+    return `<h2 class="sec">${sorteios.length ? 'Próximo sorteio' : 'Fazer o primeiro sorteio'}</h2>
+      <p class="sec-nota">Entram os amigos ativos com data de anos. Cada um tira outro e compra-lhe a garrafa no primeiro aniversário a partir desta data. Ninguém vê o que saiu aos outros — nem tu. O sorteio evita o par da última vez${sorteios.length ? '' : ' (o do ciclo)'}.</p>
+      <div class="cartao linha-form"><input type="date" id="so-inicio" value="${proximoInicioSorteio()}"><button class="btn prim" onclick="fazerSorteio()">🎲 Sortear</button></div>`;
+}
+async function fazerSorteio(refazer) {
+    const s = refazer ? sorteios.find(x => x.id === refazer) : null;
+    const inicio = s ? s.inicio : (document.getElementById('so-inicio') || {}).value;
+    if (!inicio) { toast('Escolhe a data de início', false); return; }
+    const ok = refazer
+        ? await confirmar('Refazer o sorteio?', 'O que saiu a cada um vai fora e sorteia-se outra vez. Todos recebem um aviso para irem ver quem lhes saiu agora.', 'Refazer', true)
+        : await confirmar('Fazer o sorteio?', `Entram os <b>${amigosNoCiclo().length}</b> amigos com data de anos, cada um com o primeiro aniversário a partir de <b>${fmtData(inicio)}</b>. Cada um só vê quem lhe saiu — nem tu vês o dos outros. Todos recebem um aviso.`, '🎲 Sortear');
+    if (!ok) return;
+    try {
+        const r = await rpc('sortear', { p_inicio: inicio, p_refazer: refazer || null });
+        await recarregar();
+        toast(`🎲 Feito: ${r.participantes} amigos, de ${fmtData(r.de)} a ${fmtData(r.ate)}`);
+        // O aviso é igual para todos e não diz nomes (ver prendas-notificar).
+        edgeFn('prendas-notificar', { tipo: 'sorteio', sorteio_id: r.id }).catch(() => {});
+    } catch (e) { toast('⚠️ ' + e.message, false); }
+}
+// Antes do primeiro sorteio: o ciclo, como era.
+function cicloAntigoHTML() {
     const c = amigosNoCiclo();
-    let html = `<p class="sec-nota">Por ordem de anos: cada um compra a garrafa ao seguinte, e o custo divide-se por todos menos quem faz anos.</p>`;
+    let html = `<div class="cartao aviso">🎲 Agora é <b>sorteio</b>: cada um tira quem lhe calha e só sabe a quem tem de dar. Quando a prenda é registada, todos passam a ver quem a deu.${AC.admin ? '' : ' O admin faz o sorteio.'}</div>`;
+    html += sorteioAdminHTML();
+    html += `<h2 class="sec">Até agora: o ciclo</h2><p class="sec-nota">Por ordem de anos: cada um compra a garrafa ao seguinte, e o custo divide-se por todos menos quem faz anos.</p>`;
     if (c.length < 2) html += vazio('São precisos pelo menos dois amigos com data de anos.');
     else html += `<div class="ciclo">` + c.map((a, i) => `
         <div class="cc-l${a.nome === AC.eu ? ' eu' : ''}">
@@ -621,10 +752,14 @@ function renderCiclo() {
           ${avatar(a.nome)}<span class="cc-n">${esc(a.nome)}${a.nome === AC.eu ? ' <small>(tu)</small>' : ''}</span>
           <span class="cc-compra">🎁 compra ao <b>${esc(c[(i + 1) % c.length].nome)}</b></span>
         </div>`).join('') + `<div class="cc-volta">↺ e o ${esc(c[c.length - 1].nome)} compra ao ${esc(c[0].nome)}</div></div>`;
+    return html + rodapeAmigosHTML();
+}
+function rodapeAmigosHTML() {
+    let html = '';
     const semData = amigos.filter(a => a.ativo && !(a.dia && a.mes));
-    if (semData.length) html += `<p class="sec-nota">Sem data de anos (fora do ciclo): ${semData.map(a => esc(a.nome)).join(', ')}.</p>`;
+    if (semData.length) html += `<p class="sec-nota" style="margin-top:12px">Sem data de anos (fora do ${sorteios.length ? 'sorteio' : 'ciclo'}): ${semData.map(a => esc(a.nome)).join(', ')}.</p>`;
     if (AC.admin) html += `<button class="btn ghost largo" onclick="irPara('definicoes')">Editar amigos e datas</button>`;
-    el.innerHTML = html;
+    return html;
 }
 
 /* ── A PRENDA (ver) ─────────────────────────────────────────────────────── */
@@ -736,7 +871,8 @@ function novoEvento(nome, data) {
     _pesqMemoria = [];
     _form = {
         id: null, aniversariante: aniv, data: data || hoje(),
-        responsavel: aniv ? (responsavelPor(aniv) || '') : (AC.eu || ''),
+        // Num aniversário sorteado de outro, o admin não sabe quem compra: fica vazio.
+        responsavel: aniv ? (quemCompra(_aniv(aniv, data || hoje())).nome || '') : (AC.eu || ''),
         participantes: amigos.filter(a => a.ativo && a.nome !== aniv).map(a => a.nome),
         estado: (data || hoje()) < hoje() ? 'entregue' : 'comprado',
         valor: '', dividir: '', dividirManual: false, notas: '', vinho: {}, pagos: [], pagosAntes: []
@@ -824,7 +960,8 @@ function folhaForm() {
           <div class="grelha2">
             <label class="campo"><span>Faz anos</span><select id="f-aniv" onchange="lerForm();_formMudouAniv()">${opts(f.aniversariante)}</select></label>
             <label class="campo"><span>Compra</span><select id="f-resp" onchange="lerForm();redesenharFolha()">${opts(f.responsavel, f.aniversariante)}</select></label>
-          </div>` : `<p class="f-texto" style="margin-top:0">🎂 <b>${esc(f.aniversariante)}</b> · compra <b>${esc(f.responsavel)}</b></p>`}
+          </div>
+          ${!f.id && f.aniversariante && quemCompra(_aniv(f.aniversariante, f.data || hoje())).segredo ? '<p class="sec-nota">🤫 Quem compra saiu no sorteio e é segredo — escolhe quem te disse que a comprou.</p>' : ''}` : `<p class="f-texto" style="margin-top:0">🎂 <b>${esc(f.aniversariante)}</b> · compra <b>${esc(f.responsavel)}</b></p>`}
         <label class="campo"><span>Data</span><input id="f-data" type="date" value="${esc(f.data)}" onchange="lerForm();redesenharFolha()"></label>
         <div class="seg" role="group" aria-label="Estado">
           ${Object.keys(ESTADOS).map(k => `<button class="${f.estado === k ? 'on' : ''}" onclick="lerForm();_form.estado='${k}';redesenharFolha()">${ESTADOS[k]}</button>`).join('')}
@@ -947,10 +1084,12 @@ function _formAtualizarQuota() {
     el.innerHTML = _formQuotaTexto(Math.max(1, _formParticipantes().length));
 }
 function _formMudouAniv() {
-    // Mudou quem faz anos: o ciclo volta a propor quem compra, e quem faz
-    // anos sai de quem divide.
-    const r = responsavelPor(_form.aniversariante);
-    if (r) _form.responsavel = r;
+    // Mudou quem faz anos: o sorteio (ou o ciclo, antes dele) volta a propor
+    // quem compra — se for segredo, fica por escolher —, e quem faz anos sai
+    // de quem divide.
+    const c = quemCompra(_aniv(_form.aniversariante, _form.data || hoje()));
+    if (c.nome) _form.responsavel = c.nome;
+    else if (c.segredo) _form.responsavel = '';
     _form.participantes = _form.participantes.filter(p => p !== _form.aniversariante);
     redesenharFolha();
 }
