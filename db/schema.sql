@@ -536,8 +536,7 @@ DO $$
 DECLARE t text;
 BEGIN
   -- Ler: quem tem acesso vê tudo (as dívidas são públicas no grupo).
-  -- (pagamentos: logo a seguir — a quem faz anos esconde os da sua prenda)
-  FOREACH t IN ARRAY ARRAY['config', 'amigos', 'eventos'] LOOP
+  FOREACH t IN ARRAY ARRAY['config', 'amigos', 'eventos', 'pagamentos'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON anniversarygifts.%I', t || '_ler', t);
     EXECUTE format('CREATE POLICY %I ON anniversarygifts.%I FOR SELECT TO authenticated USING (anniversarygifts.is_allowed())', t || '_ler', t);
   END LOOP;
@@ -559,8 +558,9 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION anniversarygifts.escondido_de_mim(bigint) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION anniversarygifts.escondido_de_mim(bigint) TO authenticated, service_role;
-DROP POLICY IF EXISTS pagamentos_ler ON anniversarygifts.pagamentos;
-CREATE POLICY pagamentos_ler ON anniversarygifts.pagamentos FOR SELECT TO authenticated
+-- ALTER e não DROP+CREATE: a policy nasce no ciclo de cima (ver "Sem DROP"
+-- no CLAUDE.md — o SQL corrido pelo MCP do Supabase não passa com DROP).
+ALTER POLICY pagamentos_ler ON anniversarygifts.pagamentos
   USING (anniversarygifts.is_allowed() AND NOT anniversarygifts.escondido_de_mim(evento_id));
 
 DROP POLICY IF EXISTS access_requests_pedir ON anniversarygifts.access_requests;
@@ -1095,9 +1095,14 @@ REVOKE ALL ON anniversarygifts.sorteios, anniversarygifts.sorteio_pares, anniver
   FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON anniversarygifts.sorteios, anniversarygifts.sorteio_v TO authenticated;
 GRANT ALL ON anniversarygifts.sorteios, anniversarygifts.sorteio_pares TO service_role;
-DROP POLICY IF EXISTS sorteios_ler ON anniversarygifts.sorteios;
-CREATE POLICY sorteios_ler ON anniversarygifts.sorteios
-  FOR SELECT TO authenticated USING (anniversarygifts.is_allowed());
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'anniversarygifts'
+                    AND tablename = 'sorteios' AND policyname = 'sorteios_ler') THEN
+    CREATE POLICY sorteios_ler ON anniversarygifts.sorteios
+      FOR SELECT TO authenticated USING (anniversarygifts.is_allowed());
+  END IF;
+END $$;
 -- `sorteio_pares`: sem GRANT e sem policy para quem tem login, de propósito.
 
 REVOKE ALL ON FUNCTION anniversarygifts.sortear(date, bigint),

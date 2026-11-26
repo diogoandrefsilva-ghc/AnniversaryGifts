@@ -343,6 +343,15 @@ no passado nasce "Entregue" e não notifica ninguém.
 - A chave `anon` no topo do `app.js` é **pública por design**. Não é bug.
 - **Alterar o schema:** edita primeiro `db/schema.sql` (idempotente) e só
   depois corre no SQL Editor.
+- **Sem DROP no SQL que se corre pelo MCP do Supabase** — não passa (fica à
+  espera de uma confirmação que nunca chega; o dono já o disse várias
+  vezes). Funções e views: `CREATE OR REPLACE`; uma policy que muda:
+  `ALTER POLICY`; uma policy nova: `CREATE POLICY` dentro de um `DO` com
+  `IF NOT EXISTS (… pg_policies …)`. Não acrescentar `DROP … IF EXISTS` ao
+  `schema.sql`, e os que lá estão (antigos) ficam de fora do que se corre.
+  O que passou à primeira (26/11/2026): **tudo dentro de um só
+  `DO $x$ BEGIN … END $x$;`** — o mesmo SQL com os `REVOKE`/`ALTER` soltos
+  ficou outra vez à espera da confirmação.
 - Um nome de amigo é a identidade (PK, e está em `participantes`, que é um
   array sem FK). **Não há renomear**: apagar só funciona para quem nunca
   entrou numa prenda; quem sai do grupo fica `ativo = false`.
