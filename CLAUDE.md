@@ -219,8 +219,9 @@ outros passam a ver essa informação."
   todos e **não diz nomes** — aparece no ecrã bloqueado. Quem é dono do
   projeto Supabase vê a tabela no SQL Editor; é não ir lá espreitar.
 - **Quem deu a quem aparece quando a prenda é registada**: é o
-  `responsavel` do evento, que todos veem como sempre — **incluindo quem faz
-  anos** (a garrafa continua escondida até ser entregue; quem compra, não).
+  `responsavel` do evento, que todos veem como sempre — **menos quem faz
+  anos, que só sabe quando a recebe** (o dono, 26/11/2026; ver "A garrafa é
+  SURPRESA").
 - **O par é a proposta; o gravado manda** (como o ciclo era). A
   `guardar_evento` não deixa outro amigo registar um aniversário sorteado
   que não lhe saiu; o admin pode registar com quem for preciso.
@@ -234,13 +235,20 @@ outros passam a ver essa informação."
   já chega para quem comprou receber as partes. Data no passado → nasce
   "Entregue"; hoje ou à frente → "Comprada".
 - **Quem faz anos NÃO vê a garrafa até ela passar a `entregue`** — nem o
-  nome, nem a foto, nem a ficha, nem as notas. As dívidas vê (são públicas).
+  nome, nem a foto, nem a ficha, nem as notas. **Nem quem a comprou**
+  (desde o sorteio): `responsavel`, `criado_por` e `atualizado_por` vêm a
+  NULL, e as dívidas e os pagamentos DESSA prenda não lhe aparecem — o
+  credor é quem comprou, e quem falta na lista de quem deve também o diz
+  (`dividas` com o mesmo filtro; `pagamentos_ler` com `escondido_de_mim`).
+  As outras dívidas vê (são públicas).
   Isto é do SERVIDOR, não da UI: `authenticated` já não tem SELECT na
   `eventos`; lê-se a view **`eventos_v`** (corre como o dono, portão
   `is_allowed()`), que devolve `vinho = {}`, `notas = NULL` e
   `vinho_oculto = true` a quem faz anos numa prenda por entregar. A
   `dividas` passou também a `security_invoker = false` pela mesma razão.
-  A app só mostra "🎁 Surpresa" onde vê `vinho_oculto`.
+  A app só mostra "🎁 Surpresa" onde vê `vinho_oculto` (que hoje esconde
+  também quem comprou — o nome ficou por compatibilidade), e a folha da
+  prenda nem desenha a divisão.
 - **Nem o admin mexe na própria prenda antes de a receber**
   (`guardar_evento` recusa registar e alterar): a app recebe a ficha vazia,
   e gravar por cima apagava a garrafa. `podeGerirEvento`/

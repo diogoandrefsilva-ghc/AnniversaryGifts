@@ -359,7 +359,8 @@ function _aniv(nome, data) { return { nome, data, ano: +String(data).slice(0, 4)
 // gravado manda; depois o sorteio (só se sabe se fores tu); antes do
 // primeiro sorteio, o ciclo; depois dele e fora de todos, ainda ninguém.
 function quemCompra(x) {
-    if (x.evento) return { nome: x.evento.responsavel };
+    // A quem faz anos, quem compra só aparece quando a recebe (eventos_v).
+    if (x.evento) return x.evento.vinho_oculto ? { segredo: true } : { nome: x.evento.responsavel };
     const p = parDe(x.nome, x.ano);
     if (p) return p.responsavel ? { nome: p.responsavel } : { segredo: true };
     const ini = inicioSorteios();
@@ -425,7 +426,7 @@ function nomeVinho(v) {
     return v.nome + (v.ano ? ' ' + v.ano : '');
 }
 const ESTADOS = { comprado: 'Comprada', entregue: 'Entregue' };
-const SURPRESA = '🎁 Surpresa — a garrafa aparece quando for entregue';
+const SURPRESA = '🎁 Surpresa — a garrafa e quem ta deu aparecem quando a receberes';
 function estadoPill(ev) {
     return `<span class="pill est-${ev.estado}">${ESTADOS[ev.estado] || ev.estado}</span>`;
 }
@@ -461,7 +462,7 @@ function cartaoPrenda(ev) {
           <span class="cp-l1"><b>🎂 ${esc(ev.aniversariante)}</b><span class="cp-data">${fmtData(ev.data)}</span></span>
           <span class="cp-l2">${oculto ? '<i>🎁 Surpresa — só a vês quando a receberes</i>' : v.nome ? esc(nomeVinho(v)) : '<i>garrafa por escolher</i>'}</span>
           ${detalhe ? `<span class="cp-l3">${detalhe}</span>` : ''}
-          <span class="cp-l3">comprada pelo ${esc(ev.responsavel)}</span>
+          <span class="cp-l3">${oculto ? '🤫 quem ta deu também é surpresa' : 'comprada pelo ' + esc(ev.responsavel)}</span>
           <span class="cp-tags">${ev.estado === 'entregue' ? '' : estadoPill(ev)}${tags.join('')}</span>
         </span>
       </button>`;
@@ -692,7 +693,8 @@ function renderCiclo() {
             const ev = evDe(p);
             const [, m, d] = p.data.split('-').map(Number);
             let quem;
-            if (ev) quem = `${ev.estado === 'entregue' ? '🎁 dada' : '🛒 comprada'} pelo <b>${esc(ev.responsavel)}</b>${ev.responsavel === AC.eu ? ' (tu)' : ''}`;
+            if (ev && ev.vinho_oculto) quem = '🛒 já comprada — por quem, é surpresa 🤫';
+            else if (ev) quem = `${ev.estado === 'entregue' ? '🎁 dada' : '🛒 comprada'} pelo <b>${esc(ev.responsavel)}</b>${ev.responsavel === AC.eu ? ' (tu)' : ''}`;
             else if (p.responsavel) quem = '🎲 saiu-te a ti';
             else quem = '🤫 segredo';
             const click = ev ? `abrirEvento(${ev.id})` : (p.responsavel ? `novoEvento('${escJs(p.aniversariante)}','${p.data}')` : '');
@@ -776,12 +778,16 @@ function folhaEvento(id) {
     let html = `
       <div class="ev-cab">
         <div><h3 class="f-tit">🎂 ${esc(ev.aniversariante)}</h3>
-        <div class="ev-sub">${fmtData(ev.data)} · compra <b>${esc(ev.responsavel)}</b></div></div>
+        <div class="ev-sub">${fmtData(ev.data)}${ev.vinho_oculto ? '' : ` · compra <b>${esc(ev.responsavel)}</b>`}</div></div>
         ${estadoPill(ev)}
       </div>`;
+    // A quem faz anos, antes de a receber: nem a garrafa, nem quem a comprou,
+    // nem a divisão (quem lá falta é quem comprou) — o servidor já não as manda.
+    if (ev.vinho_oculto) return html + `<div class="cartao vazio-vinho">${SURPRESA}.</div>
+      <div class="f-acoes"><button class="btn ghost" onclick="fecharFolha()">Fechar</button></div>`;
 
-    // O vinho (a quem faz anos, surpresa até ser entregue)
-    html += ev.vinho_oculto ? `<div class="cartao vazio-vinho">${SURPRESA}.</div>` : v.nome ? vinhoFicha(v) : `<div class="cartao vazio-vinho">🍷 Garrafa ainda por escolher${gerir ? ' — <a href="#" onclick="editarEvento(' + ev.id + ');return false">escolher</a>' : ''}.</div>`;
+    // O vinho
+    html += v.nome ? vinhoFicha(v) : `<div class="cartao vazio-vinho">🍷 Garrafa ainda por escolher${gerir ? ' — <a href="#" onclick="editarEvento(' + ev.id + ');return false">escolher</a>' : ''}.</div>`;
     if (gerir && v.nome) html += `<button class="btn ghost largo" id="btn-cat-${ev.id}" onclick="atualizarDoCatalogo(${ev.id})">🔄 Atualizar do catálogo</button>`;
 
     // A divisão

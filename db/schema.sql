@@ -185,6 +185,10 @@ $$;
 -- O portão deixa passar também a service role: a `prendas-notificar` lê
 -- aqui com ela, e a service role não tem `eu()` — só com o is_allowed() a
 -- view dava-lhe zero linhas e os avisos de dívida não saíam para ninguém.
+-- A quem faz anos, as dívidas da SUA prenda por entregar não aparecem (desde
+-- o sorteio, 26/11/2026): o credor é quem comprou, e mesmo sem ele quem
+-- falta na lista de quem deve é quem comprou. A service role não tem `eu()`
+-- e vê tudo (o coalesce dá false).
 -- =====================================================================
 CREATE OR REPLACE VIEW anniversarygifts.dividas WITH (security_invoker = false) AS
 SELECT e.id AS evento_id,
@@ -202,6 +206,7 @@ SELECT e.id AS evento_id,
  WHERE coalesce(e.valor_dividir, e.valor) > 0
    AND p.devedor <> e.responsavel
    AND (anniversarygifts.is_allowed() OR auth.role() = 'service_role')
+   AND NOT coalesce(e.estado <> 'entregue' AND e.aniversariante = anniversarygifts.eu(), false)
  GROUP BY e.id, p.devedor, e.responsavel, e.valor, e.valor_dividir, e.participantes;
 
 -- =====================================================================
@@ -531,7 +536,8 @@ DO $$
 DECLARE t text;
 BEGIN
   -- Ler: quem tem acesso vê tudo (as dívidas são públicas no grupo).
-  FOREACH t IN ARRAY ARRAY['config', 'amigos', 'eventos', 'pagamentos'] LOOP
+  -- (pagamentos: logo a seguir — a quem faz anos esconde os da sua prenda)
+  FOREACH t IN ARRAY ARRAY['config', 'amigos', 'eventos'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON anniversarygifts.%I', t || '_ler', t);
     EXECUTE format('CREATE POLICY %I ON anniversarygifts.%I FOR SELECT TO authenticated USING (anniversarygifts.is_allowed())', t || '_ler', t);
   END LOOP;
@@ -541,6 +547,21 @@ BEGIN
     EXECUTE format('CREATE POLICY %I ON anniversarygifts.%I FOR ALL TO authenticated USING (anniversarygifts.is_admin()) WITH CHECK (anniversarygifts.is_admin())', t || '_admin', t);
   END LOOP;
 END $$;
+
+-- Os pagamentos de uma prenda por entregar não se mostram a quem faz anos:
+-- dizem a quem se pagou (quem comprou). Pela mesma regra da `eventos_v` e da
+-- `dividas`. A função é DEFINER porque quem tem login já não lê a `eventos`.
+CREATE OR REPLACE FUNCTION anniversarygifts.escondido_de_mim(p_evento bigint) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = anniversarygifts, public
+AS $$
+  SELECT coalesce((SELECT e.estado <> 'entregue' AND e.aniversariante = anniversarygifts.eu()
+                     FROM anniversarygifts.eventos e WHERE e.id = p_evento), false)
+$$;
+REVOKE ALL ON FUNCTION anniversarygifts.escondido_de_mim(bigint) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION anniversarygifts.escondido_de_mim(bigint) TO authenticated, service_role;
+DROP POLICY IF EXISTS pagamentos_ler ON anniversarygifts.pagamentos;
+CREATE POLICY pagamentos_ler ON anniversarygifts.pagamentos FOR SELECT TO authenticated
+  USING (anniversarygifts.is_allowed() AND NOT anniversarygifts.escondido_de_mim(evento_id));
 
 DROP POLICY IF EXISTS access_requests_pedir ON anniversarygifts.access_requests;
 CREATE POLICY access_requests_pedir ON anniversarygifts.access_requests
@@ -573,6 +594,10 @@ CREATE POLICY push_propria ON anniversarygifts.push_subscriptions
 --     aniversariante de uma prenda ainda não entregue, devolve o `vinho`
 --     vazio e as `notas` a NULL (as notas podem dizer o vinho), com
 --     `vinho_oculto = true` para a app saber mostrar "🎁 Surpresa";
+--   · desde o sorteio (26/11/2026, o dono: "quem faz anos só sabe quando
+--     recebe a prenda") também QUEM COMPROU: `responsavel`, `criado_por` e
+--     `atualizado_por` vêm a NULL, e a `dividas` e os `pagamentos` dessa
+--     prenda não lhe aparecem;
 --   · a `dividas` passou a `security_invoker = false` pela mesma razão (lê a
 --     `eventos`), com o `is_allowed()` lá dentro;
 --   · a `guardar_evento` recusa que quem faz anos registe ou mexa na sua
@@ -586,12 +611,15 @@ ALTER TABLE anniversarygifts.eventos DROP CONSTRAINT IF EXISTS eventos_estado_ch
 ALTER TABLE anniversarygifts.eventos ADD CONSTRAINT eventos_estado_check CHECK (estado IN ('comprado', 'entregue'));
 
 CREATE OR REPLACE VIEW anniversarygifts.eventos_v WITH (security_invoker = false) AS
-SELECT e.id, e.aniversariante, e.data, e.ano, e.responsavel, e.participantes, e.estado,
+SELECT e.id, e.aniversariante, e.data, e.ano,
+       CASE WHEN o.oculto THEN NULL ELSE e.responsavel END AS responsavel,
+       e.participantes, e.estado,
        e.valor, e.valor_dividir,
        CASE WHEN o.oculto THEN '{}'::jsonb ELSE e.vinho END AS vinho,
        CASE WHEN o.oculto THEN NULL ELSE e.notas END AS notas,
        o.oculto AS vinho_oculto,
-       e.criado_por, e.criado_em, e.atualizado_por, e.atualizado_em
+       CASE WHEN o.oculto THEN NULL ELSE e.criado_por END AS criado_por, e.criado_em,
+       CASE WHEN o.oculto THEN NULL ELSE e.atualizado_por END AS atualizado_por, e.atualizado_em
   FROM anniversarygifts.eventos e
  CROSS JOIN LATERAL (SELECT coalesce(e.estado <> 'entregue'
                                       AND e.aniversariante = anniversarygifts.eu(), false) AS oculto) o
@@ -897,7 +925,8 @@ SELECT cron.schedule('anniversarygifts-catalogo', '17 4 * * *', 'SELECT annivers
 --   · o aviso push do sorteio é igual para todos e não diz nomes (um
 --     telemóvel em cima da mesa mostra o ecrã bloqueado a quem passa).
 -- Quem deu a quem aparece quando a prenda é REGISTADA: é o `responsavel`
--- do evento, que toda a gente vê, como sempre. O par é a proposta — o
+-- do evento, que toda a gente vê, como sempre — menos quem faz anos, que só
+-- o vê quando a recebe (ver A GARRAFA É SURPRESA). O par é a proposta — o
 -- gravado manda (o admin pode registar com outro, se for preciso); a
 -- `guardar_evento` só não deixa outro amigo registar o aniversário que
 -- não lhe saiu.
