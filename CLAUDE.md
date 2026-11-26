@@ -32,28 +32,34 @@ schema **`anniversarygifts`**.
   Prendas · **Dívidas** · **O sorteio** · Sorteio (o separador) · **A prenda (ver)** · **A prenda
   (registar/editar)** · **O vinho: procurar informação** · **Pagamentos** ·
   Definições · Notificações push · Auth · Init.
-- `style.css` — todo o CSS. Paleta de **festa** (violeta `--pri`, coral,
-  amarelo `--sol`) e fonte Nunito — **de propósito longe do bordô/dourado**
-  das apps de vinhos: já havia várias assim, e o dono quis variar. Não
-  voltar a puxar isto para o estilo da Garrafeira. **A paleta toda vive no
-  `:root`** (incluindo os tons das sombras e véus, `--tinta`, `--escuro`,
-  `--bg-rgb`): mudar de cores é mudar esse bloco (e o `theme-color` do
+- `style.css` — todo o CSS. Paleta de **festa**: **petróleo** `--pri`
+  (#0e7f83, escuro #0b3d44), **coral** e **amarelo** `--sol`, fonte Nunito —
+  **de propósito longe do bordô/dourado** das apps de vinhos: já havia várias
+  assim, e o dono quis variar. Não voltar a puxar isto para o estilo da
+  Garrafeira. Até 26/11/2026 era **violeta**; o dono cansou-se do roxo e
+  escolheu esta entre três (petróleo & coral, azul & laranja, tangerina &
+  azul-noite) — não voltar ao roxo. **A paleta toda vive no `:root`**
+  (incluindo os tons das sombras e véus, `--tinta`, `--escuro`, `--bg-rgb`):
+  mudar de cores é mudar esse bloco (e o `theme-color` do
   `index.html`/`manifest.json`). Cor escrita à mão fora do `:root` = não.
-  A 26/11/2026 o dono disse que já não adora o roxo e quer outra cor e
-  outro logo — em escolha.
 - `sw.js` — service worker (cache + push). **Sobe `CACHE_NAME`** sempre que
   mexeres em `app.js`, `style.css` ou `index.html`.
 - `db/schema.sql` — o schema inteiro, idempotente. `db/seed-amigos.sql` —
   primeira lista de amigos, copiada de `splitbill.amigo_users`.
 - `prendas-notificar.ts`, `prendas-vinho.ts` — Edge Functions (Deno). **Não
   correm no site**: `supabase functions deploy <nome>`.
-- `icone-original.png` / `icone-transparente.png` — o ícone (garrafa +
-  prenda), escolhido pelo dono, nas duas versões que ele deu. São as FONTES:
-  `icon-512.png` e `apple-touch-icon.png` (ícone da app, precisa de fundo)
-  saem do original, recortado ao miolo sem a moldura clara (quadrado de
-  1040 px centrado em 627,625); `logo.png` (cabeçalho, separador Prendas,
-  splash, login) sai do transparente, aparado ao desenho. Tudo num canvas
-  do Chromium — ícone novo = refazer a partir das fontes, não à mão.
+- `icone.svg` — o logo (26/11/2026, escolhido pelo dono entre três): a
+  **garrafa com laço** coral, coração no rótulo e confettis, desenho plano
+  nas cores da paleta. É a FONTE: `logo.png` (cabeçalho, separador Prendas,
+  splash, login; 512 px transparente) e `icon-512.png`/`apple-touch-icon.png`
+  (ícone da app: fundo menta claro em degradê, o desenho a 62% da altura —
+  "maskable" corta a um círculo de 80%) saem dele num canvas do Chromium.
+  Logo novo = mudar o SVG e refazer os três; nunca retocar um PNG à mão. No
+  splash e no login o logo vai num quadrado claro (a garrafa é escura e
+  perdia-se no degradê). O logo de antes (garrafa + prenda 3D, violeta) e as
+  fontes dele (`icone-original.png`, `icone-transparente.png`) estão no
+  histórico do git. O iPhone não atualiza o ícone de uma app já instalada:
+  para o ícone novo, tirar do ecrã principal e voltar a adicionar.
 - **Cada `<img>` leva `width`/`height` no próprio HTML, e o CSS/JS vão com
   `?v=N` no link.** Já aconteceu: o iPhone apanhou o `index.html` novo com o
   `style.css` antigo (o CDN do GitHub Pages guarda ~10 min) e os logos

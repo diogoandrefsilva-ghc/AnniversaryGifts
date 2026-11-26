@@ -1,21 +1,22 @@
-/* Prendas de Anos — paleta de FESTA (violeta, coral, amarelo), de propósito
-   longe do bordô/dourado das apps de vinhos: já havia várias assim, e esta é
-   sobre anos, não sobre a garrafeira. Nunito, arredondada, a condizer.
+/* Prendas de Anos — paleta de FESTA: petróleo (--pri), coral e amarelo
+   (--sol), de propósito longe do bordô/dourado das apps de vinhos — já havia
+   várias assim, e esta é sobre anos, não sobre a garrafeira. Até 26/11/2026
+   era violeta; o dono cansou-se do roxo e escolheu esta. Nunito, arredondada.
    Mobile-first: abre-se no telemóvel, no dia dos anos ou quando chega um aviso. */
 :root {
-  --pri: #5b4bdb;
-  --pri-dk: #2e2477;
-  --pri-lt: #eeebff;
+  --pri: #0e7f83;
+  --pri-dk: #0b3d44;
+  --pri-lt: #dcf1ef;
   --coral: #ff6f59;
-  --coral-dk: #d94a36;
+  --coral-dk: #e14a33;
   --coral-lt: #ffe9e5;
   --sol: #ffc23d;
   --sol-lt: #fff4d6;
-  --bg: #f5f4fb;
+  --bg: #f2f7f6;
   --card: #ffffff;
-  --tx: #1f1b3a;
-  --mu: #77738f;
-  --bo: #e7e5f2;
+  --tx: #14292c;
+  --mu: #5f7578;
+  --bo: #dde8e7;
   --ok: #1f9d6b;
   --ok-bg: #e3f6ee;
   --dg: #e0484f;
@@ -24,13 +25,13 @@
   --espera-bg: #fff1cf;
   /* Os tons que entram em sombras, véus e fundos translúcidos (r, g, b) e
      o resto da paleta: trocar de cores é trocar este bloco, mais nada. */
-  --tinta: 46, 36, 119;
-  --escuro: 20, 10, 60;
-  --bg-rgb: 245, 244, 251;
-  --campo: #fbfbfe;
-  --pega: #d6d3e8;
-  --calma-a: #7d77a3;
-  --calma-b: #9d97c4;
+  --tinta: 11, 61, 68;
+  --escuro: 4, 28, 32;
+  --bg-rgb: 242, 247, 246;
+  --campo: #f8fcfb;
+  --pega: #c9dbda;
+  --calma-a: #6b8a8d;
+  --calma-b: #8fa9ab;
   --anos-a: var(--pri-dk);
   --anos-b: var(--pri);
   --raio: 20px;
@@ -61,7 +62,9 @@ small { color: var(--mu); }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   color: #fff; transition: opacity .28s ease;
 }
-.pg-splash-logo { width: 104px; height: 104px; object-fit: contain; filter: drop-shadow(0 10px 22px rgba(var(--escuro), .45)); }
+/* O logo (garrafa escura) num quadrado claro, como o ícone da app: sobre o
+   degradê escuro a garrafa perdia-se. */
+.pg-splash-logo { width: 104px; height: 104px; object-fit: contain; padding: 12px; border-radius: 28px; background: linear-gradient(#fff, var(--pri-lt)); box-shadow: 0 10px 24px rgba(var(--escuro), .35); }
 .pg-splash-title { font-size: 24px; font-weight: 800; letter-spacing: .2px; }
 .pg-spin { width: 26px; height: 26px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: pg-spin .8s linear infinite; }
 @keyframes pg-spin { to { transform: rotate(360deg); } }
@@ -73,7 +76,7 @@ small { color: var(--mu); }
   background: linear-gradient(150deg, var(--pri-dk), var(--pri) 60%, var(--coral));
 }
 .auth-emoji { font-size: 46px; margin-bottom: 6px; }
-.auth-logo { width: 84px; height: 84px; object-fit: contain; margin-bottom: 8px; filter: drop-shadow(0 8px 18px rgba(var(--escuro), .4)); }
+.auth-logo { width: 84px; height: 84px; object-fit: contain; margin-bottom: 12px; padding: 10px; border-radius: 23px; background: linear-gradient(#fff, var(--pri-lt)); box-shadow: 0 8px 20px rgba(var(--escuro), .32); }
 .auth-page h2 { font-size: 28px; font-weight: 800; }
 .auth-faixa { width: 46px; height: 4px; background: var(--sol); border-radius: 2px; margin: 10px 0 14px; }
 .auth-sub { font-size: 15px; color: rgba(255,255,255,.88); max-width: 330px; margin-bottom: 22px; }
